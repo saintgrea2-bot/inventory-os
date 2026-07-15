@@ -6,24 +6,20 @@
  * Make sure your .env is configured with correct DB credentials first.
  */
 require('dotenv').config();
-const { Pool } = require('pg');
+const pool = require('./db/pool');
 const fs = require('fs');
 const path = require('path');
 
-const pool = new Pool({
-  host:     process.env.DB_HOST     || 'localhost',
-  port:     parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME     || 'inventory_db',
-  user:     process.env.DB_USER     || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-});
-
 async function setup() {
   console.log('\n🔧  InventoryOS — Database Setup\n');
-  console.log(`   Host:     ${process.env.DB_HOST || 'localhost'}`);
-  console.log(`   Port:     ${process.env.DB_PORT || '5432'}`);
-  console.log(`   Database: ${process.env.DB_NAME || 'inventory_db'}`);
-  console.log(`   User:     ${process.env.DB_USER || 'postgres'}\n`);
+  if (process.env.DATABASE_URL) {
+    console.log('   Using DATABASE_URL from environment\n');
+  } else {
+    console.log(`   Host:     ${process.env.DB_HOST || 'localhost'}`);
+    console.log(`   Port:     ${process.env.DB_PORT || '5432'}`);
+    console.log(`   Database: ${process.env.DB_NAME || 'inventory_db'}`);
+    console.log(`   User:     ${process.env.DB_USER || 'postgres'}\n`);
+  }
 
   const client = await pool.connect();
 

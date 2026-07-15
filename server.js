@@ -3,38 +3,15 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const { Pool } = require('pg');
 
 // ─── Database Pool ──────────────────────────────────────────────────────────
-// Railway provides DATABASE_URL; fall back to individual vars for local dev
-const poolConfig = process.env.DATABASE_URL
-  ? {
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false }, // required by Railway / Render
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    }
-  : {
-      host:     process.env.DB_HOST     || 'localhost',
-      port:     parseInt(process.env.DB_PORT || '5432'),
-      database: process.env.DB_NAME     || 'inventory_db',
-      user:     process.env.DB_USER     || 'postgres',
-      password: process.env.DB_PASSWORD || '',
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    };
-
-const pool = new Pool(poolConfig);
-
-// Export pool for use in routes (must be before requiring routes)
-module.exports.pool = pool;
+const pool = require('./db/pool');
 
 // ─── Auto-run Schema on First Boot ─────────────────────────────────────────
 async function initSchema() {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     // Check if table already exists
     const exists = await client.query(`
       SELECT EXISTS (
@@ -63,7 +40,7 @@ async function initSchema() {
   } catch (err) {
     console.error('❌  Schema init failed:', err.message);
   } finally {
-    client.release();
+    if (client) client.release();
   }
 }
 
