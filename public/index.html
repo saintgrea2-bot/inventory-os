@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InventoryOS — Dual-Shop Management</title>
+  <meta name="description" content="Full-stack inventory management system for Ladies Bags and Bridal Shop. Real-time stock tracking, rental management, and profit analytics." />
+
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.3.0/fonts/remixicon.css" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+
+  <style>
+    /* Inline critical overrides */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════
+     HEADER
+════════════════════════════════════════════ -->
+<header class="app-header">
+  <div class="header-inner">
+    <a href="/" class="logo">
+      <div class="logo-icon">🛍</div>
+      <span class="logo-text">Inventory<span>OS</span></span>
+    </a>
+
+    <div class="header-divider"></div>
+
+    <!-- Shop Toggle -->
+    <div class="shop-toggle" role="group" aria-label="Shop selector">
+      <button class="shop-toggle-btn active" id="btn-bags" onclick="switchShop('Bags')" aria-pressed="true">
+        <i class="ri-handbag-line"></i> Ladies Bags
+      </button>
+      <button class="shop-toggle-btn" id="btn-bridal" onclick="switchShop('Bridal')" aria-pressed="false">
+        <i class="ri-scissors-line"></i> Bridal Shop
+      </button>
+    </div>
+
+    <div class="header-actions">
+      <!-- Connection Status -->
+      <div class="conn-status">
+        <div class="conn-dot" id="conn-dot"></div>
+        <span id="conn-label">Connecting…</span>
+      </div>
+
+      <div class="header-divider"></div>
+
+      <!-- Refresh -->
+      <button class="btn-icon" onclick="refreshAll()" id="refresh-btn" title="Refresh data">
+        <i class="ri-refresh-line"></i>
+      </button>
+
+      <!-- History Modal trigger -->
+      <button class="btn-secondary" onclick="openHistoryModal()" id="history-btn">
+        <i class="ri-history-line"></i> Audit Trail
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ════════════════════════════════════════════
+     MAIN LAYOUT
+════════════════════════════════════════════ -->
+<main class="app-layout">
+
+  <!-- ── LEFT PANEL: Form + Summary ── -->
+  <aside>
+
+    <!-- ── SUMMARY STATS ── -->
+    <div class="stats-row">
+      <div class="stat-card orange">
+        <div class="stat-label">Live Stock</div>
+        <div class="stat-value orange" id="stat-stock">—</div>
+        <div class="stat-sub" id="stat-stock-sub">Total units</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-label">Total Profit</div>
+        <div class="stat-value green" id="stat-profit">—</div>
+        <div class="stat-sub">Gross earnings</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-label">Active Rentals</div>
+        <div class="stat-value red" id="stat-rentals">—</div>
+        <div class="stat-sub" id="stat-overdue-sub">Outstanding</div>
+      </div>
+    </div>
+
+    <!-- ── ACTION FORM ── -->
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header">
+        <span class="card-title">
+          <div class="card-title-icon">✏️</div>
+          <span id="form-title">Log Action — Ladies Bags</span>
+        </span>
+        <button class="btn-icon" onclick="resetForm()" title="Clear form">
+          <i class="ri-eraser-line"></i>
+        </button>
+      </div>
+      <div class="card-body">
+        <form id="inventory-form" novalidate>
+
+          <!-- Core Fields (always visible) -->
+          <div class="form-section-title">Core Details</div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="action_type">Action Type <span class="required">*</span></label>
+              <select class="form-select" id="action_type" name="action_type" required>
+                <option value="">— Select Action —</option>
+                <option value="New Item">New Item</option>
+                <option value="Restock">Restock</option>
+                <option value="Retail Sale">Retail Sale</option>
+                <option value="Rental Out">Rental Out</option>
+                <option value="Rental Return">Rental Return</option>
+                <option value="Status Change">Status Change</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="item_sku">SKU / Item Code <span class="required">*</span></label>
+              <input class="form-input" type="text" id="item_sku" name="item_sku"
+                     placeholder="e.g. BAG-001" required autocomplete="off"
+                     list="sku-suggestions" />
+              <datalist id="sku-suggestions"></datalist>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="item_name">Item Name <span class="required">*</span></label>
+            <input class="form-input" type="text" id="item_name" name="item_name"
+                   placeholder="e.g. Classic Leather Tote" required />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="brand_designer">Brand / Designer</label>
+              <input class="form-input" type="text" id="brand_designer" name="brand_designer"
+                     placeholder="e.g. Gucci, Zara…" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="shop_type_field">Shop</label>
+              <input class="form-input" type="text" id="shop_type_field" name="shop_type"
+                     readonly style="background:#f9f9f9; font-weight:600;" />
+            </div>
+          </div>
+
+          <!-- Financials -->
+          <div class="form-section-title">Financials</div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="stock_cost_price">
+                Cost Price <span class="required" id="cost-required">*</span>
+              </label>
+              <input class="form-input" type="number" id="stock_cost_price" name="stock_cost_price"
+                     placeholder="0.00" min="0" step="0.01" />
+              <div class="form-hint" id="cost-hint">Purchase/wholesale cost</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="sell_price">
+                <span id="sell-price-label">Sell Price</span>
+              </label>
+              <input class="form-input" type="number" id="sell_price" name="sell_price"
+                     placeholder="0.00" min="0" step="0.01" />
+              <div class="form-hint" id="sell-hint">Retail / rental price</div>
+            </div>
+          </div>
+
+          <!-- Bags-specific Fields -->
+          <div class="field-group" id="bags-fields">
+            <div class="form-section-title">Bags Details</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="bag_color">Bag Color</label>
+                <input class="form-input" type="text" id="bag_color" name="bag_color"
+                       placeholder="e.g. Black, Tan, Red…" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="quantity_change">Qty Change <span class="required">*</span></label>
+                <input class="form-input" type="number" id="quantity_change" name="quantity_change"
+                       placeholder="e.g. +5 or -1" step="1" />
+                <div class="form-hint">Negative for sales</div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="min_stock_alert">Low Stock Alert Threshold</label>
+              <input class="form-input" type="number" id="min_stock_alert" name="min_stock_alert"
+                     placeholder="2" min="0" value="2" />
+            </div>
+          </div>
+
+          <!-- Bridal-specific Fields -->
+          <div class="field-group hidden" id="bridal-fields">
+            <div class="form-section-title">Bridal Details</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" for="bridal_size">Dress Size</label>
+                <input class="form-input" type="text" id="bridal_size" name="bridal_size"
+                       placeholder="e.g. UK 10, US 6, EU 38…" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="bridal_status">Gown Status</label>
+                <select class="form-select" id="bridal_status" name="bridal_status">
+                  <option value="">— Select Status —</option>
+                  <option value="Available">Available</option>
+                  <option value="Rented">Rented</option>
+                  <option value="In Alteration">In Alteration</option>
+                  <option value="Dry Cleaning">Dry Cleaning</option>
+                  <option value="Sold">Sold</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field-group hidden" id="rental-fields">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="customer_name_contact">Customer Name &amp; Contact</label>
+                  <input class="form-input" type="text" id="customer_name_contact" name="customer_name_contact"
+                         placeholder="Name — Phone / Email" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="rental_due_date">Return Due Date</label>
+                  <input class="form-input" type="date" id="rental_due_date" name="rental_due_date" />
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="quantity_change_bridal">Qty Change</label>
+              <input class="form-input" type="number" id="quantity_change_bridal" name="quantity_change"
+                     placeholder="e.g. 1 or -1" step="1" value="0" />
+            </div>
+          </div>
+
+          <!-- Notes -->
+          <div class="form-section-title">Additional Info</div>
+          <div class="form-group">
+            <label class="form-label" for="notes">Notes</label>
+            <textarea class="form-textarea" id="notes" name="notes"
+                      placeholder="Any additional notes, conditions, references…"></textarea>
+          </div>
+
+          <button type="submit" class="btn-primary" id="submit-btn">
+            <i class="ri-add-circle-line"></i>
+            <span id="submit-label">Log Transaction</span>
+          </button>
+
+        </form>
+      </div>
+    </div>
+
+    <!-- ── OUTSTANDING RENTALS PANEL ── -->
+    <div class="card" id="rentals-card">
+      <div class="card-header">
+        <span class="card-title">
+          <div class="card-title-icon">📅</div>
+          Outstanding Rentals
+        </span>
+        <span class="badge badge-rented" id="rental-count-badge">0</span>
+      </div>
+      <div class="card-body" style="padding:16px;">
+        <div id="rental-list-container">
+          <div class="empty-state" style="padding:24px 12px;">
+            <div class="empty-icon">✅</div>
+            <div class="empty-title">All clear!</div>
+            <div class="empty-sub">No active rentals</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── RIGHT PANEL: Inventory Table ── -->
+  <div class="right-panel">
+
+    <!-- Table Header -->
+    <div class="card">
+      <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <span class="card-title" style="flex:1;">
+          <div class="card-title-icon">📦</div>
+          <span id="table-shop-label">Ladies Bags — Live Inventory</span>
+        </span>
+
+        <!-- Search -->
+        <div class="search-bar" style="width:220px;">
+          <i class="ri-search-line search-icon"></i>
+          <input class="form-input" type="search" id="table-search"
+                 placeholder="Search SKU, name…" style="font-size:13px;" />
+        </div>
+
+        <!-- View tabs -->
+        <div style="display:flex; gap:4px;">
+          <button class="btn-secondary" id="tab-inventory-btn"
+                  onclick="setTableTab('inventory')" style="font-size:12px; padding:6px 12px;">
+            <i class="ri-table-line"></i> Inventory
+          </button>
+          <button class="btn-secondary" id="tab-analytics-btn"
+                  onclick="setTableTab('analytics')" style="font-size:12px; padding:6px 12px;">
+            <i class="ri-bar-chart-line"></i> Analytics
+          </button>
+        </div>
+
+        <button class="btn-icon" onclick="refreshAll()" title="Refresh">
+          <i class="ri-refresh-line"></i>
+        </button>
+      </div>
+
+      <!-- ── INVENTORY TAB ── -->
+      <div id="tab-inventory" class="tab-panel active">
+        <div class="table-wrapper" style="border:none; border-radius:0;">
+          <table id="live-table">
+            <thead>
+              <tr id="live-table-head">
+                <!-- Bags headers inserted by JS -->
+              </tr>
+            </thead>
+            <tbody id="live-table-body">
+              <tr class="loading-row">
+                <td colspan="10">
+                  <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
+                    <div class="spinner"></div> Loading inventory…
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── ANALYTICS TAB ── -->
+      <div id="tab-analytics" class="tab-panel">
+        <div style="padding:24px;">
+          <div id="analytics-content">
+            <div class="empty-state">
+              <div class="empty-icon">📊</div>
+              <div class="empty-title">Switch to Analytics view</div>
+              <div class="empty-sub">Click the Analytics tab to see profit breakdown</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<!-- ════════════════════════════════════════════
+     AUDIT TRAIL MODAL
+════════════════════════════════════════════ -->
+<div class="modal-overlay" id="history-modal" role="dialog" aria-modal="true" aria-label="Audit Trail">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title"><i class="ri-history-line"></i> Full Audit Trail</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="search-bar" style="width:200px;">
+          <i class="ri-search-line search-icon"></i>
+          <input class="form-input" type="search" id="history-search"
+                 placeholder="Filter records…" style="font-size:13px;" />
+        </div>
+        <button class="modal-close" onclick="closeHistoryModal()" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="table-wrapper">
+        <table id="history-table">
+          <thead>
+            <tr>
+              <th>Date/Time</th>
+              <th>Shop</th>
+              <th>SKU</th>
+              <th>Item</th>
+              <th>Action</th>
+              <th>Qty Δ</th>
+              <th>Cost</th>
+              <th>Price</th>
+              <th>Profit</th>
+              <th>Margin</th>
+              <th>Status</th>
+              <th>Customer</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="history-table-body">
+            <tr class="loading-row">
+              <td colspan="13">
+                <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
+                  <div class="spinner"></div> Loading history…
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
