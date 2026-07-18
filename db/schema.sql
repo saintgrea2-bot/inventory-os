@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS unified_inventory_history (
     -- Bridal-specific
     bridal_size           VARCHAR(50),
     bridal_status         VARCHAR(50)
-                            CHECK (bridal_status IN ('Available', 'Rented', 'In Alteration', 'Dry Cleaning', 'Sold', NULL)),
+                            CHECK (bridal_status IN ('Available', 'Rented', 'Returned', 'In Alteration', 'Dry Cleaning', 'Sold')),
     rental_due_date       DATE,
     customer_name_contact VARCHAR(255),
 

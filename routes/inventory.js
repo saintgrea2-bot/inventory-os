@@ -42,7 +42,7 @@ router.post('/log', asyncHandler(async (req, res) => {
     errors.push('item_name is required.');
   if (!action_type || !['New Item', 'Restock', 'Retail Sale', 'Rental Out', 'Rental Return', 'Status Change'].includes(action_type))
     errors.push('action_type is invalid.');
-  if (bridal_status && !['Available', 'Rented', 'In Alteration', 'Dry Cleaning', 'Sold'].includes(bridal_status))
+  if (bridal_status && !['Available', 'Rented', 'Returned', 'In Alteration', 'Dry Cleaning', 'Sold'].includes(bridal_status))
     errors.push('bridal_status is invalid.');
 
   if (errors.length > 0)

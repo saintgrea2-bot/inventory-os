@@ -1,21 +1,19 @@
 /* =====================================================================
-   InventoryOS — Frontend Application Logic
-   Dual-Shop Inventory Management (Ladies Bags + Bridal)
+   InventoryOS — Frontend Application Logic (Redesigned)
+   Dual-Shop: Ladies Bag Shop + Bridal Shop
    ===================================================================== */
 
 'use strict';
 
-// ── State ──────────────────────────────────────────────────────────────────
 const state = {
-  currentShop: 'Bags',
-  currentTab:  'inventory',
-  liveData:    [],
+  currentView: 'dashboard',
+  bridalTab: 'sales',
+  liveData: [],
   historyData: [],
-  allSkus:     [],
 };
 
-// ── API Base ───────────────────────────────────────────────────────────────
 const API = '/api/inventory';
+const VALID_STATUSES = ['Available', 'Rented', 'Returned', 'In Alteration', 'Dry Cleaning', 'Sold'];
 
 // ══════════════════════════════════════════════════════════════════════════
 // UTILITIES
@@ -26,43 +24,13 @@ function fmt(num, decimals = 2) {
   if (isNaN(n)) return '—';
   return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
+function fmtCurrency(num) { const n = parseFloat(num); return isNaN(n) ? '—' : '$' + fmt(n); }
+function fmtDate(s) { if (!s) return '—'; const d = new Date(s); return isNaN(d) ? s : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
+function fmtDateTime(s) { if (!s) return '—'; const d = new Date(s); return isNaN(d) ? s : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
+function isOverdue(s) { return s && new Date(s) < new Date(); }
+function escHtml(str) { if (str == null) return ''; return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function daysUntil(s) { if (!s) return null; const d = Math.ceil((new Date(s) - new Date()) / 86400000); return d; }
 
-function fmtCurrency(num) {
-  const n = parseFloat(num);
-  if (isNaN(n)) return '—';
-  return '$' + fmt(n);
-}
-
-function fmtDate(dateStr) {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d)) return dateStr;
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-function fmtDateTime(dateStr) {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d)) return dateStr;
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
-         ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-}
-
-function isOverdue(dateStr) {
-  if (!dateStr) return false;
-  return new Date(dateStr) < new Date();
-}
-
-function escHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-// ── Toast Notifications ────────────────────────────────────────────────────
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
   const icons = { success: '✅', error: '❌', info: 'ℹ️' };
@@ -73,226 +41,15 @@ function showToast(message, type = 'info') {
   setTimeout(() => toast.remove(), 4200);
 }
 
-// ── Connection Status ──────────────────────────────────────────────────────
 function setConnectionStatus(online) {
-  const dot   = document.getElementById('conn-dot');
+  const dot = document.getElementById('conn-dot');
   const label = document.getElementById('conn-label');
-  if (online) {
-    dot.className = 'conn-dot online';
-    label.textContent = 'Connected';
-  } else {
-    dot.className = 'conn-dot offline';
-    label.textContent = 'Offline';
-  }
+  dot.className = 'conn-dot ' + (online ? 'online' : 'offline');
+  label.textContent = online ? 'Connected' : 'Offline';
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// SHOP TOGGLE
-// ══════════════════════════════════════════════════════════════════════════
-
-function switchShop(shop) {
-  state.currentShop = shop;
-
-  // Toggle buttons
-  document.getElementById('btn-bags').classList.toggle('active', shop === 'Bags');
-  document.getElementById('btn-bridal').classList.toggle('active', shop === 'Bridal');
-  document.getElementById('btn-bags').setAttribute('aria-pressed', shop === 'Bags');
-  document.getElementById('btn-bridal').setAttribute('aria-pressed', shop === 'Bridal');
-
-  // Update form title & shop field
-  document.getElementById('form-title').textContent =
-    `Log Action — ${shop === 'Bags' ? 'Ladies Bags' : 'Bridal Shop'}`;
-  document.getElementById('shop_type_field').value = shop;
-
-  // Update table label
-  document.getElementById('table-shop-label').textContent =
-    `${shop === 'Bags' ? 'Ladies Bags' : 'Bridal Shop'} — Live Inventory`;
-
-  // Show/hide dynamic form fields
-  toggleShopFields(shop);
-
-  // Filter action type options based on shop
-  updateActionTypeOptions(shop);
-
-  // Reset SKU autocomplete for this shop
-  updateSkuSuggestions();
-
-  // Refresh table view
-  renderLiveTable(state.liveData);
-  renderSummary();
-}
-
-function toggleShopFields(shop) {
-  const bagsFields   = document.getElementById('bags-fields');
-  const bridalFields = document.getElementById('bridal-fields');
-
-  if (shop === 'Bags') {
-    bagsFields.classList.remove('hidden');
-    bridalFields.classList.add('hidden');
-  } else {
-    bagsFields.classList.add('hidden');
-    bridalFields.classList.remove('hidden');
-  }
-}
-
-function updateActionTypeOptions(shop) {
-  const sel = document.getElementById('action_type');
-  const currentVal = sel.value;
-
-  const bagActions    = ['New Item', 'Restock', 'Retail Sale', 'Status Change'];
-  const bridalActions = ['New Item', 'Rental Out', 'Rental Return', 'Status Change', 'Retail Sale'];
-  const allActions    = ['New Item', 'Restock', 'Retail Sale', 'Rental Out', 'Rental Return', 'Status Change'];
-
-  const allowed = shop === 'Bags' ? bagActions : bridalActions;
-
-  sel.innerHTML = '<option value="">— Select Action —</option>';
-  allActions.forEach(a => {
-    const opt = document.createElement('option');
-    opt.value = a;
-    opt.textContent = a;
-    if (!allowed.includes(a)) opt.disabled = true;
-    if (a === currentVal && allowed.includes(a)) opt.selected = true;
-    sel.appendChild(opt);
-  });
-
-  onActionTypeChange();
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// DYNAMIC FORM FIELD VISIBILITY
-// ══════════════════════════════════════════════════════════════════════════
-
-function onActionTypeChange() {
-  const action = document.getElementById('action_type').value;
-  const rentalFields  = document.getElementById('rental-fields');
-  const bridalStatus  = document.getElementById('bridal_status');
-  const costInput     = document.getElementById('stock_cost_price');
-  const costHint      = document.getElementById('cost-hint');
-  const sellLabel     = document.getElementById('sell-price-label');
-  const submitLabel   = document.getElementById('submit-label');
-  const costRequired  = document.getElementById('cost-required');
-
-  // Bridal rental-specific fields
-  if (state.currentShop === 'Bridal') {
-    if (action === 'Rental Out') {
-      rentalFields.classList.remove('hidden');
-      bridalStatus.value = 'Rented';
-      populateRentalProductSelect();
-    } else if (action === 'Rental Return') {
-      rentalFields.classList.remove('hidden');
-      bridalStatus.value = 'Available';
-      populateRentalProductSelect();
-    } else {
-      rentalFields.classList.add('hidden');
-    }
-  }
-
-  // Financial field hints
-  if (action === 'Rental Out') {
-    costInput.value      = '0.00';
-    costInput.readOnly   = true;
-    costInput.style.background = '#f9f9f9';
-    costHint.textContent = '⚡ Auto-set to 0 (item cost recorded on New Item)';
-    sellLabel.textContent = 'Rental Price';
-    costRequired.style.display = 'none';
-  } else {
-    costInput.readOnly   = false;
-    costInput.style.background = '';
-    costHint.textContent = 'Purchase / wholesale cost';
-    sellLabel.textContent = action === 'Restock' ? 'Sell Price (optional)' : 'Sell Price';
-    costRequired.style.display = action === 'New Item' ? '' : 'none';
-  }
-
-  // Qty sign hint
-  if (action === 'Retail Sale') {
-    document.getElementById('quantity_change').placeholder = 'e.g. -1 (negative)';
-  } else if (action === 'Restock') {
-    document.getElementById('quantity_change').placeholder = 'e.g. +5';
-  } else {
-    document.getElementById('quantity_change').placeholder = 'e.g. 1';
-  }
-
-  // Submit label
-  const labels = {
-    'New Item':      '➕ Add New Item',
-    'Restock':       '📦 Log Restock',
-    'Retail Sale':   '🛒 Record Sale',
-    'Rental Out':    '🎁 Log Rental Out',
-    'Rental Return': '↩️ Record Return',
-    'Status Change': '🔄 Update Status',
-  };
-  submitLabel.textContent = labels[action] || 'Log Transaction';
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// FORM SUBMISSION
-// ══════════════════════════════════════════════════════════════════════════
-
-document.getElementById('inventory-form').addEventListener('submit', async function (e) {
-  e.preventDefault();
-  const btn = document.getElementById('submit-btn');
-  const btnHTML = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<div class="spinner" style="border-color:#fff3;border-top-color:#fff;"></div> Logging…';
-
-  try {
-    // Collect form data
-    const fd = new FormData(this);
-    const body = {};
-    fd.forEach((v, k) => { if (v !== '') body[k] = v; });
-
-    // Ensure shop_type is always set
-    body.shop_type = state.currentShop;
-
-    // Bridal: sync the hidden bridal quantity_change if needed
-    if (state.currentShop === 'Bridal') {
-      body.quantity_change = document.getElementById('quantity_change_bridal').value || 0;
-    }
-
-    // Validate required
-    if (!body.item_sku || !body.item_name || !body.action_type) {
-      showToast('Please fill in SKU, item name, and action type.', 'error');
-      return;
-    }
-
-    const res = await fetch(`${API}/log`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.details?.join(', ') || data.error || 'Server error');
-
-    showToast(data.message, 'success');
-    btn.innerHTML = btnHTML;
-    resetForm();
-    await refreshAll();
-
-  } catch (err) {
-    showToast(`Error: ${err.message}`, 'error');
-    setConnectionStatus(false);
-  } finally {
-    btn.innerHTML = btnHTML;
-    btn.disabled = false;
-    onActionTypeChange();
-  }
-});
-
-function resetForm() {
-  document.getElementById('inventory-form').reset();
-  document.getElementById('shop_type_field').value = state.currentShop;
-  document.getElementById('cost-hint').textContent = 'Purchase / wholesale cost';
-  document.getElementById('sell-price-label').textContent = 'Sell Price';
-  document.getElementById('rental-fields').classList.add('hidden');
-  document.getElementById('stock_cost_price').readOnly = false;
-  document.getElementById('stock_cost_price').style.background = '';
-  document.getElementById('cost-required').style.display = '';
-  document.getElementById('submit-label').textContent = 'Log Transaction';
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// FETCH — LIVE INVENTORY
+// DATA
 // ══════════════════════════════════════════════════════════════════════════
 
 async function fetchLiveInventory() {
@@ -302,32 +59,18 @@ async function fetchLiveInventory() {
     const data = await res.json();
     state.liveData = data.items || [];
     setConnectionStatus(true);
-
-    // Extract all known SKUs for autocomplete
-    state.allSkus = [...new Set(state.liveData.map(r => r.item_sku))];
-    updateSkuSuggestions();
-
-    renderSummary(data.summary);
-    renderLiveTable(state.liveData);
-    renderRentalPanel(state.liveData);
-    if (state.currentTab === 'analytics') renderAnalytics(state.liveData);
-
+    renderAll();
   } catch (err) {
     setConnectionStatus(false);
     showToast('Could not load inventory: ' + err.message, 'error');
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-// FETCH — HISTORY
-// ══════════════════════════════════════════════════════════════════════════
-
 async function fetchHistory() {
   try {
     const res = await fetch(`${API}/history?limit=1000`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    state.historyData = data.history || [];
+    state.historyData = (await res.json()).history || [];
     renderHistoryTable(state.historyData);
   } catch (err) {
     showToast('Could not load history: ' + err.message, 'error');
@@ -338,643 +81,502 @@ async function refreshAll() {
   const btn = document.getElementById('refresh-btn');
   btn.classList.add('refreshing');
   await fetchLiveInventory();
-  if (document.getElementById('history-modal').classList.contains('open')) {
-    await fetchHistory();
-  }
+  if (document.getElementById('history-modal').classList.contains('open')) await fetchHistory();
   btn.classList.remove('refreshing');
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-// RENDER — SUMMARY STATS
-// ══════════════════════════════════════════════════════════════════════════
-
-function renderSummary(summary) {
-  // Filter to current shop if not provided
-  const shopData = state.liveData.filter(r => r.shop_type === state.currentShop);
-
-  const totalStock  = shopData.reduce((s, r) => s + parseInt(r.live_stock || 0), 0);
-  const totalProfit = shopData.reduce((s, r) => s + parseFloat(r.total_gross_profit || 0), 0);
-  const rentals     = state.liveData.filter(r => r.bridal_status === 'Rented');
-  const overdue     = rentals.filter(r => isOverdue(r.rental_due_date));
-  const lowStock    = shopData.filter(r => parseInt(r.live_stock) <= parseInt(r.min_stock_alert));
-
-  document.getElementById('stat-stock').textContent = totalStock;
-  document.getElementById('stat-stock-sub').textContent =
-    `${shopData.length} SKUs${lowStock.length ? ` · ⚠️ ${lowStock.length} low` : ''}`;
-
-  document.getElementById('stat-profit').textContent = '$' + fmt(totalProfit);
-
-  document.getElementById('stat-rentals').textContent = rentals.length;
-  document.getElementById('stat-overdue-sub').textContent =
-    overdue.length > 0 ? `⚠️ ${overdue.length} OVERDUE` : 'Outstanding';
-
-  if (overdue.length > 0) {
-    document.querySelector('#stat-rentals').closest('.stat-card').classList.add('overdue-pulse');
-  }
-}
+function shopItems(shop) { return state.liveData.filter(r => r.shop_type === shop); }
 
 // ══════════════════════════════════════════════════════════════════════════
-// RENDER — LIVE INVENTORY TABLE
+// VIEW ROUTING
 // ══════════════════════════════════════════════════════════════════════════
 
-function renderLiveTable(data) {
-  const search = document.getElementById('table-search').value.toLowerCase();
-  const shop = state.currentShop;
-
-  let filtered = data.filter(r => r.shop_type === shop);
-  if (search) {
-    filtered = filtered.filter(r =>
-      r.item_sku.toLowerCase().includes(search) ||
-      r.item_name.toLowerCase().includes(search) ||
-      (r.brand_designer || '').toLowerCase().includes(search) ||
-      (r.bag_color || '').toLowerCase().includes(search)
-    );
-  }
-
-  // Build headers
-  const head = document.getElementById('live-table-head');
-  const body = document.getElementById('live-table-body');
-
-  if (shop === 'Bags') {
-    head.innerHTML = `
-      <th>SKU</th>
-      <th>Item Name</th>
-      <th>Brand</th>
-      <th>Color</th>
-      <th>Stock</th>
-      <th>Cost</th>
-      <th>Price</th>
-      <th>Gross Profit</th>
-      <th>Margin</th>
-      <th>Last Action</th>
-      <th>Updated</th>
-      <th class="th-actions">Actions</th>
-    `;
-  } else {
-    head.innerHTML = `
-      <th>SKU</th>
-      <th>Gown Name</th>
-      <th>Designer</th>
-      <th>Size</th>
-      <th>Status</th>
-      <th>Cost</th>
-      <th>Rental/Sell</th>
-      <th>Gross Profit</th>
-      <th>Margin</th>
-      <th>Return Due</th>
-      <th>Customer</th>
-      <th>Last Action</th>
-      <th class="th-actions">Actions</th>
-    `;
-  }
-
-  if (filtered.length === 0) {
-    body.innerHTML = `
-      <tr>
-        <td colspan="${shop === 'Bags' ? 12 : 13}">
-          <div class="empty-state">
-            <div class="empty-icon">${shop === 'Bags' ? '👜' : '👗'}</div>
-            <div class="empty-title">No items found</div>
-            <div class="empty-sub">Log your first item using the form on the left</div>
-          </div>
-        </td>
-      </tr>`;
-    return;
-  }
-
-  body.innerHTML = filtered.map(r => {
-    const stock     = parseInt(r.live_stock || 0);
-    const minAlert  = parseInt(r.min_stock_alert || 2);
-    const isLow     = stock <= minAlert && shop === 'Bags';
-    const overdue   = isOverdue(r.rental_due_date) && r.bridal_status === 'Rented';
-    const rowClass  = overdue ? 'overdue' : isLow ? 'low-stock' : '';
-    const margin    = parseFloat(r.profit_margin || 0);
-    const marginBar = `
-      <div class="margin-bar">
-        <div class="margin-track">
-          <div class="margin-fill" style="width:${Math.min(margin, 100)}%;"></div>
-        </div>
-        <span class="margin-text">${fmt(margin, 1)}%</span>
-      </div>`;
-    const actions = `
-      <td class="row-actions">
-        <button class="row-action-btn" onclick="updateItem('${escHtml(r.item_sku)}')" title="Update"><i class="ri-edit-line"></i></button>
-        <button class="row-action-btn danger" onclick="deleteItem('${escHtml(r.item_sku)}')" title="Delete"><i class="ri-delete-bin-line"></i></button>
-      </td>`;
-
-    if (shop === 'Bags') {
-      const stockClass = stock === 0 ? 'zero' : stock <= minAlert ? 'low' : 'good';
-      const stockIcon  = stock === 0 ? '🔴' : stock <= minAlert ? '🟡' : '🟢';
-      return `
-        <tr class="${rowClass}">
-          <td class="sku">${escHtml(r.item_sku)}</td>
-          <td><strong>${escHtml(r.item_name)}</strong></td>
-          <td class="muted">${escHtml(r.brand_designer || '—')}</td>
-          <td>
-            ${r.bag_color ? `<div class="color-swatch">
-              <span class="swatch-dot" style="background:${getColorHex(r.bag_color)};"></span>
-              ${escHtml(r.bag_color)}
-            </div>` : '<span class="muted">—</span>'}
-          </td>
-          <td>
-            <span class="stock-count ${stockClass}">
-              ${stockIcon} ${stock}
-            </span>
-            ${isLow && stock > 0 ? '<span class="badge badge-low-stock" style="margin-left:4px;">Low</span>' : ''}
-            ${stock === 0 ? '<span class="badge badge-sold" style="margin-left:4px;">Out</span>' : ''}
-          </td>
-          <td class="money">${fmtCurrency(r.stock_cost_price)}</td>
-          <td class="money">${fmtCurrency(r.sell_price)}</td>
-          <td class="money profit">${fmtCurrency(r.total_gross_profit)}</td>
-          <td>${marginBar}</td>
-          <td>${getActionBadge(r.last_action)}</td>
-          <td class="muted">${fmtDate(r.last_updated)}</td>
-          ${actions}
-        </tr>`;
-    } else {
-      return `
-        <tr class="${rowClass}">
-          <td class="sku">${escHtml(r.item_sku)}</td>
-          <td><strong>${escHtml(r.item_name)}</strong></td>
-          <td class="muted">${escHtml(r.brand_designer || '—')}</td>
-          <td class="muted">${escHtml(r.bridal_size || '—')}</td>
-          <td>${getBridalStatusBadge(r.bridal_status, overdue)}</td>
-          <td class="money">${fmtCurrency(r.stock_cost_price)}</td>
-          <td class="money">${fmtCurrency(r.sell_price)}</td>
-          <td class="money profit">${fmtCurrency(r.total_gross_profit)}</td>
-          <td>${marginBar}</td>
-          <td class="${overdue ? 'money' : 'muted'}" style="${overdue ? 'color:var(--red);font-weight:700;' : ''}">
-            ${r.rental_due_date ? fmtDate(r.rental_due_date) : '—'}
-            ${overdue ? ' ⚠️' : ''}
-          </td>
-          <td class="muted">${escHtml(r.customer_name_contact || '—')}</td>
-          <td>${getActionBadge(r.last_action)}</td>
-          ${actions}
-        </tr>`;
-    }
-  }).join('');
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// RENDER — RENTAL PANEL
-// ══════════════════════════════════════════════════════════════════════════
-
-function renderRentalPanel(data) {
-  const rentals = data.filter(r => r.bridal_status === 'Rented');
-  const badge   = document.getElementById('rental-count-badge');
-  badge.textContent = rentals.length;
-
-  const container = document.getElementById('rental-list-container');
-
-  if (rentals.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state" style="padding:24px 12px;">
-        <div class="empty-icon">✅</div>
-        <div class="empty-title">All clear!</div>
-        <div class="empty-sub">No active rentals</div>
-      </div>`;
-    return;
-  }
-
-  // Sort: overdue first
-  const sorted = [...rentals].sort((a, b) => {
-    const aOver = isOverdue(a.rental_due_date) ? 0 : 1;
-    const bOver = isOverdue(b.rental_due_date) ? 0 : 1;
-    return aOver - bOver;
+function switchView(view) {
+  state.currentView = view;
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + view).classList.add('active');
+  ['dashboard', 'bags', 'bridal'].forEach(v => {
+    document.getElementById('nav-' + v).classList.toggle('active', v === view);
   });
+  renderAll();
+}
 
-  container.innerHTML = `<div class="rental-list">${sorted.map(r => {
-    const overdue = isOverdue(r.rental_due_date);
-    return `
-      <div class="rental-item ${overdue ? 'overdue' : ''}">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-          <span class="rental-name">${escHtml(r.item_name)}</span>
-          ${overdue ? '<span class="badge badge-overdue">⚠️ Overdue</span>' : ''}
-        </div>
-        <div class="rental-meta">
-          <strong>${escHtml(r.item_sku)}</strong>
-          ${r.bridal_size ? ` · Size ${escHtml(r.bridal_size)}` : ''}
-        </div>
-        ${r.customer_name_contact ? `<div class="rental-meta">👤 ${escHtml(r.customer_name_contact)}</div>` : ''}
-        ${r.rental_due_date ? `<div class="rental-meta" style="${overdue ? 'color:var(--red);font-weight:600;' : ''}">
-          📅 Due: ${fmtDate(r.rental_due_date)}
-        </div>` : ''}
-      </div>`;
-  }).join('')}</div>`;
+function setBridalTab(tab) {
+  state.bridalTab = tab;
+  document.getElementById('bridal-tab-sales').classList.toggle('active', tab === 'sales');
+  document.getElementById('bridal-tab-rentals').classList.toggle('active', tab === 'rentals');
+  document.getElementById('bridal-sales-panel').classList.toggle('active', tab === 'sales');
+  document.getElementById('bridal-rentals-panel').classList.toggle('active', tab === 'rentals');
+  if (tab === 'rentals') renderRentalBoard();
+}
+
+function renderAll() {
+  renderDashboard();
+  renderBagsView();
+  renderBridalSales();
+  if (state.bridalTab === 'rentals') renderRentalBoard();
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// RENDER — HISTORY TABLE
+// DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════
 
-function renderHistoryTable(data) {
-  const search = document.getElementById('history-search').value.toLowerCase();
+function renderDashboard() {
+  const all = state.liveData;
+  const bags = shopItems('Bags');
+  const bridal = shopItems('Bridal');
+  const totalStock = all.reduce((s, r) => s + parseInt(r.live_stock || 0), 0);
+  const totalProfit = all.reduce((s, r) => s + parseFloat(r.total_gross_profit || 0), 0);
+  const rentals = all.filter(r => r.bridal_status === 'Rented');
+  const overdue = rentals.filter(r => isOverdue(r.rental_due_date));
+
+  document.getElementById('dash-items').textContent = all.length;
+  document.getElementById('dash-items-sub').textContent = `${bags.length} bags · ${bridal.length} bridal`;
+  document.getElementById('dash-stock').textContent = totalStock;
+  document.getElementById('dash-profit').textContent = fmtCurrency(totalProfit);
+  document.getElementById('dash-rentals').textContent = rentals.length;
+  document.getElementById('dash-rentals-sub').textContent = overdue.length ? `⚠️ ${overdue.length} overdue` : 'Outstanding';
+
+  document.getElementById('dash-bags-summary').innerHTML = shopSummaryCard(bags, 'Bags');
+  document.getElementById('dash-bridal-summary').innerHTML = shopSummaryCard(bridal, 'Bridal');
+
+  // Upcoming returns board
+  const sorted = [...rentals].sort((a, b) => new Date(a.rental_due_date || '9999') - new Date(b.rental_due_date || '9999'));
+  document.getElementById('dash-returns-board').innerHTML = sorted.length
+    ? `<div class="rental-list">${sorted.map(r => rentalCard(r, false)).join('')}</div>`
+    : emptyState('✅', 'All clear', 'No active rentals');
+}
+
+function shopSummaryCard(items, shop) {
+  const stock = items.reduce((s, r) => s + parseInt(r.live_stock || 0), 0);
+  const profit = items.reduce((s, r) => s + parseFloat(r.total_gross_profit || 0), 0);
+  const low = items.filter(r => parseInt(r.live_stock) <= parseInt(r.min_stock_alert || 2)).length;
+  return `
+    <div class="summary-line"><span>Items</span><strong>${items.length}</strong></div>
+    <div class="summary-line"><span>Stock on hand</span><strong>${stock}</strong></div>
+    <div class="summary-line"><span>Gross profit</span><strong class="money profit">${fmtCurrency(profit)}</strong></div>
+    ${shop === 'Bags' ? `<div class="summary-line"><span>Low stock</span><strong>${low}</strong></div>` : ''}
+  `;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// BAGS SHOP VIEW
+// ══════════════════════════════════════════════════════════════════════════
+
+function renderBagsView() {
+  const bags = shopItems('Bags');
+  const stock = bags.reduce((s, r) => s + parseInt(r.live_stock || 0), 0);
+  const profit = bags.reduce((s, r) => s + parseFloat(r.total_gross_profit || 0), 0);
+  const low = bags.filter(r => parseInt(r.live_stock) <= parseInt(r.min_stock_alert || 2));
+  document.getElementById('bags-stats').innerHTML = `
+    ${statCard('Items', bags.length, 'orange')}
+    ${statCard('Stock', stock, 'green')}
+    ${statCard('Gross Profit', fmtCurrency(profit), 'blue')}
+    ${statCard('Low Stock', low.length, 'red')}
+  `;
+  renderShopTable('bags-table', bags, 'Bags', 'bags-search');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// BRIDAL SALES VIEW
+// ══════════════════════════════════════════════════════════════════════════
+
+function renderBridalSales() {
+  const bridal = shopItems('Bridal');
+  const stock = bridal.reduce((s, r) => s + parseInt(r.live_stock || 0), 0);
+  const profit = bridal.reduce((s, r) => s + parseFloat(r.total_gross_profit || 0), 0);
+  const rented = bridal.filter(r => r.bridal_status === 'Rented').length;
+  document.getElementById('bridal-stats').innerHTML = `
+    ${statCard('Items', bridal.length, 'orange')}
+    ${statCard('Stock', stock, 'green')}
+    ${statCard('Gross Profit', fmtCurrency(profit), 'blue')}
+    ${statCard('Rented', rented, 'red')}
+  `;
+  renderShopTable('bridal-table', bridal, 'Bridal', 'bridal-search');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// SHOP TABLE (shared, with Update/Delete)
+// ══════════════════════════════════════════════════════════════════════════
+
+function renderShopTable(tableId, data, shop, searchId) {
+  const search = (document.getElementById(searchId)?.value || '').toLowerCase();
   let filtered = data;
   if (search) {
     filtered = data.filter(r =>
-      (r.item_sku  || '').toLowerCase().includes(search) ||
+      (r.item_sku || '').toLowerCase().includes(search) ||
       (r.item_name || '').toLowerCase().includes(search) ||
-      (r.action_type || '').toLowerCase().includes(search) ||
-      (r.customer_name_contact || '').toLowerCase().includes(search) ||
-      (r.notes || '').toLowerCase().includes(search)
-    );
+      (r.brand_designer || '').toLowerCase().includes(search) ||
+      (r.bag_color || '').toLowerCase().includes(search));
+  }
+  const head = document.getElementById(tableId.replace('-table', '-table-head'));
+  const body = document.getElementById(tableId.replace('-table', '-table-body'));
+
+  if (shop === 'Bags') {
+    head.innerHTML = `<th>SKU</th><th>Item</th><th>Brand</th><th>Color</th><th>Stock</th><th>Cost</th><th>Price</th><th>Profit</th><th>Margin</th><th>Updated</th><th class="th-actions">Actions</th>`;
+  } else {
+    head.innerHTML = `<th>SKU</th><th>Gown</th><th>Designer</th><th>Size</th><th>Status</th><th>Cost</th><th>Price</th><th>Profit</th><th>Margin</th><th>Updated</th><th class="th-actions">Actions</th>`;
   }
 
-  const body = document.getElementById('history-table-body');
-
   if (filtered.length === 0) {
-    body.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">No records found</div></div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="11">${emptyState(shop === 'Bags' ? '👜' : '👗', 'No items found', 'Use the buttons above to add items or record sales')}</td></tr>`;
     return;
   }
 
   body.innerHTML = filtered.map(r => {
+    const stock = parseInt(r.live_stock || 0);
+    const minAlert = parseInt(r.min_stock_alert || 2);
+    const isLow = stock <= minAlert && shop === 'Bags';
+    const overdue = isOverdue(r.rental_due_date) && r.bridal_status === 'Rented';
+    const rowClass = overdue ? 'overdue' : isLow ? 'low-stock' : '';
     const margin = parseFloat(r.profit_margin || 0);
-    return `
-      <tr>
-        <td class="muted" style="white-space:nowrap;">${fmtDateTime(r.created_at)}</td>
-        <td>
-          <span class="badge ${r.shop_type === 'Bags' ? 'badge-new' : 'badge-alteration'}">
-            ${r.shop_type === 'Bags' ? '👜' : '👗'} ${escHtml(r.shop_type)}
-          </span>
-        </td>
+    const marginBar = `<div class="margin-bar"><div class="margin-track"><div class="margin-fill" style="width:${Math.min(margin,100)}%;"></div></div><span class="margin-text">${fmt(margin,1)}%</span></div>`;
+    const actions = `<td class="row-actions">
+      <button class="row-action-btn" onclick="quickUpdate('${escHtml(r.item_sku)}','${shop}')" title="Update"><i class="ri-edit-line"></i></button>
+      <button class="row-action-btn danger" onclick="deleteItem('${escHtml(r.item_sku)}','${shop}')" title="Delete"><i class="ri-delete-bin-line"></i></button>
+    </td>`;
+    const updated = `<td class="muted">${fmtDate(r.last_updated)}</td>`;
+
+    if (shop === 'Bags') {
+      const sc = stock === 0 ? 'zero' : stock <= minAlert ? 'low' : 'good';
+      const si = stock === 0 ? '🔴' : stock <= minAlert ? '🟡' : '🟢';
+      return `<tr class="${rowClass}">
         <td class="sku">${escHtml(r.item_sku)}</td>
-        <td style="max-width:180px;"><strong>${escHtml(r.item_name)}</strong></td>
-        <td>${getActionBadge(r.action_type)}</td>
-        <td class="money" style="${parseInt(r.quantity_change) < 0 ? 'color:var(--red);' : 'color:var(--green);'}">
-          ${parseInt(r.quantity_change) > 0 ? '+' : ''}${r.quantity_change}
-        </td>
-        <td class="money muted">${fmtCurrency(r.stock_cost_price)}</td>
+        <td><strong>${escHtml(r.item_name)}</strong></td>
+        <td class="muted">${escHtml(r.brand_designer || '—')}</td>
+        <td>${r.bag_color ? `<div class="color-swatch"><span class="swatch-dot" style="background:${getColorHex(r.bag_color)};"></span>${escHtml(r.bag_color)}</div>` : '<span class="muted">—</span>'}</td>
+        <td><span class="stock-count ${sc}">${si} ${stock}</span></td>
+        <td class="money">${fmtCurrency(r.stock_cost_price)}</td>
         <td class="money">${fmtCurrency(r.sell_price)}</td>
-        <td class="money profit">${fmtCurrency(r.gross_profit)}</td>
-        <td style="white-space:nowrap;">
-          <span style="font-size:12px;font-weight:700;color:${margin >= 50 ? 'var(--green)' : margin >= 20 ? 'var(--orange)' : 'var(--red)'}">
-            ${fmt(margin, 1)}%
-          </span>
-        </td>
-        <td>${getBridalStatusBadge(r.bridal_status)}</td>
-        <td class="muted" style="max-width:150px;font-size:12px;">${escHtml(r.customer_name_contact || '—')}</td>
-        <td class="muted" style="max-width:200px;font-size:12px;">${escHtml(r.notes || '—')}</td>
-      </tr>`;
+        <td class="money profit">${fmtCurrency(r.total_gross_profit)}</td>
+        <td>${marginBar}</td>${updated}${actions}</tr>`;
+    } else {
+      return `<tr class="${rowClass}">
+        <td class="sku">${escHtml(r.item_sku)}</td>
+        <td><strong>${escHtml(r.item_name)}</strong></td>
+        <td class="muted">${escHtml(r.brand_designer || '—')}</td>
+        <td class="muted">${escHtml(r.bridal_size || '—')}</td>
+        <td>${getBridalStatusBadge(r.bridal_status, overdue)}</td>
+        <td class="money">${fmtCurrency(r.stock_cost_price)}</td>
+        <td class="money">${fmtCurrency(r.sell_price)}</td>
+        <td class="money profit">${fmtCurrency(r.total_gross_profit)}</td>
+        <td>${marginBar}</td>${updated}${actions}</tr>`;
+    }
   }).join('');
 }
 
+function statCard(label, value, color) {
+  return `<div class="stat-card ${color}"><div class="stat-label">${label}</div><div class="stat-value ${color}">${value}</div></div>`;
+}
+
+function emptyState(icon, title, sub) {
+  return `<div class="empty-state"><div class="empty-icon">${icon}</div><div class="empty-title">${title}</div><div class="empty-sub">${sub}</div></div>`;
+}
+
 // ══════════════════════════════════════════════════════════════════════════
-// RENDER — ANALYTICS
+// RENTAL MODULE (Bridal)
 // ══════════════════════════════════════════════════════════════════════════
 
-function renderAnalytics(data) {
-  const shopData = data.filter(r => r.shop_type === state.currentShop);
-  if (shopData.length === 0) {
-    document.getElementById('analytics-content').innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">📊</div>
-        <div class="empty-title">No data yet</div>
-        <div class="empty-sub">Log some items to see analytics</div>
-      </div>`;
-    return;
-  }
+function renderRentalBoard() {
+  const filter = document.getElementById('rental-status-filter')?.value || 'Rented';
+  const bridal = shopItems('Bridal');
+  const available = bridal.filter(r => r.bridal_status === 'Available').length;
+  const rented = bridal.filter(r => r.bridal_status === 'Rented').length;
+  const returned = bridal.filter(r => r.bridal_status === 'Returned').length;
+  const overdue = bridal.filter(r => r.bridal_status === 'Rented' && isOverdue(r.rental_due_date)).length;
 
-  const totalRevenue = shopData.reduce((s, r) => s + parseFloat(r.total_revenue || 0), 0);
-  const totalProfit  = shopData.reduce((s, r) => s + parseFloat(r.total_gross_profit || 0), 0);
-  const avgMargin    = shopData.reduce((s, r) => s + parseFloat(r.profit_margin || 0), 0) / shopData.length;
+  document.getElementById('rental-stats').innerHTML = `
+    ${statCard('Available', available, 'green')}
+    ${statCard('Rented', rented, 'orange')}
+    ${statCard('Returned', returned, 'blue')}
+    ${statCard('Overdue', overdue, 'red')}
+  `;
 
-  // Sort by profit desc
-  const sorted = [...shopData].sort((a, b) => parseFloat(b.total_gross_profit) - parseFloat(a.total_gross_profit));
+  let items = bridal;
+  if (filter === 'overdue') items = bridal.filter(r => r.bridal_status === 'Rented' && isOverdue(r.rental_due_date));
+  else if (filter !== 'all') items = bridal.filter(r => r.bridal_status === filter);
 
-  document.getElementById('analytics-content').innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;">
-      <div class="stat-card orange" style="border:1px solid var(--border);">
-        <div class="stat-label">Total Revenue</div>
-        <div class="stat-value" style="font-size:22px;">${fmtCurrency(totalRevenue)}</div>
+  const titles = { Rented: 'Active Rentals', Available: 'Available Items', Returned: 'Returned Items', overdue: 'Overdue Rentals', all: 'All Bridal Items' };
+  document.getElementById('rental-board-title').textContent = titles[filter] || 'Items';
+
+  // Sort: by due date ascending (upcoming first) for rented, else by name
+  items = [...items].sort((a, b) => {
+    if (filter === 'Rented' || filter === 'overdue' || filter === 'all') {
+      const da = a.rental_due_date || '9999', db = b.rental_due_date || '9999';
+      if (da !== db) return new Date(da) - new Date(db);
+    }
+    return (a.item_name || '').localeCompare(b.item_name || '');
+  });
+
+  document.getElementById('rental-board').innerHTML = items.length
+    ? `<div class="rental-list">${items.map(r => rentalCard(r, true)).join('')}</div>`
+    : emptyState('📭', 'No items', `No ${filter === 'all' ? '' : filter.toLowerCase() + ' '}items to show`);
+}
+
+function rentalCard(r, withReturnBtn) {
+  const overdue = r.bridal_status === 'Rented' && isOverdue(r.rental_due_date);
+  const days = daysUntil(r.rental_due_date);
+  const showReturn = withReturnBtn && r.bridal_status === 'Rented';
+  return `
+    <div class="rental-item ${overdue ? 'overdue' : ''}">
+      <div class="rental-item-top">
+        <span class="rental-name">${escHtml(r.item_name)}</span>
+        ${getBridalStatusBadge(r.bridal_status, overdue)}
       </div>
-      <div class="stat-card green" style="border:1px solid var(--border);">
-        <div class="stat-label">Total Gross Profit</div>
-        <div class="stat-value" style="font-size:22px;">${fmtCurrency(totalProfit)}</div>
-      </div>
-      <div class="stat-card blue" style="border:1px solid var(--border);">
-        <div class="stat-label">Avg Profit Margin</div>
-        <div class="stat-value" style="font-size:22px;">${fmt(avgMargin, 1)}%</div>
-      </div>
-    </div>
-
-    <h3 style="font-size:13px;font-weight:700;color:var(--charcoal-mid);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px;">
-      Profit by Item
-    </h3>
-    <div style="display:flex;flex-direction:column;gap:8px;">
-      ${sorted.map(r => {
-        const profitPct = totalProfit > 0 ? (parseFloat(r.total_gross_profit) / totalProfit) * 100 : 0;
-        return `
-          <div style="display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:12px;padding:10px 12px;background:#fff;border:1px solid var(--border);border-radius:8px;">
-            <div>
-              <div style="font-weight:600;font-size:13px;">${escHtml(r.item_name)}</div>
-              <div style="font-size:11px;color:var(--charcoal-soft);">${escHtml(r.item_sku)}</div>
-              <div class="margin-bar" style="margin-top:6px;">
-                <div class="margin-track">
-                  <div class="margin-fill" style="width:${profitPct.toFixed(1)}%;"></div>
-                </div>
-                <span class="margin-text">${fmt(profitPct, 1)}% of total</span>
-              </div>
-            </div>
-            <div style="text-align:right;">
-              <div class="money profit" style="font-size:15px;">${fmtCurrency(r.total_gross_profit)}</div>
-              <div style="font-size:11px;color:var(--charcoal-soft);">profit</div>
-            </div>
-            <div style="text-align:right;">
-              <div style="font-size:13px;font-weight:700;color:${parseFloat(r.profit_margin)>=50?'var(--green)':'var(--orange)'};">
-                ${fmt(r.profit_margin, 1)}%
-              </div>
-              <div style="font-size:11px;color:var(--charcoal-soft);">margin</div>
-            </div>
-          </div>`;
-      }).join('')}
+      <div class="rental-meta"><strong>${escHtml(r.item_sku)}</strong>${r.bridal_size ? ` · Size ${escHtml(r.bridal_size)}` : ''}${r.brand_designer ? ` · ${escHtml(r.brand_designer)}` : ''}</div>
+      ${r.customer_name_contact ? `<div class="rental-meta">👤 ${escHtml(r.customer_name_contact)}</div>` : ''}
+      ${r.rental_due_date ? `<div class="rental-meta" style="${overdue ? 'color:var(--red);font-weight:600;' : ''}">📅 Due: ${fmtDate(r.rental_due_date)}${r.bridal_status === 'Rented' ? (overdue ? ` · ⚠️ ${Math.abs(days)}d overdue` : (days <= 3 ? ` · ${days}d left` : '')) : ''}</div>` : ''}
+      ${showReturn ? `<button class="btn-secondary btn-sm" style="margin-top:8px;" onclick="processReturn('${escHtml(r.item_sku)}')"><i class="ri-arrow-go-back-line"></i> Process Return</button>` : ''}
     </div>`;
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-// TABLE TABS
-// ══════════════════════════════════════════════════════════════════════════
-
-function setTableTab(tab) {
-  state.currentTab = tab;
-  document.getElementById('tab-inventory').classList.toggle('active', tab === 'inventory');
-  document.getElementById('tab-analytics').classList.toggle('active', tab === 'analytics');
-  document.getElementById('tab-inventory-btn').style.color = tab === 'inventory' ? 'var(--orange)' : '';
-  document.getElementById('tab-inventory-btn').style.borderColor = tab === 'inventory' ? 'var(--orange)' : '';
-  document.getElementById('tab-analytics-btn').style.color = tab === 'analytics' ? 'var(--orange)' : '';
-  document.getElementById('tab-analytics-btn').style.borderColor = tab === 'analytics' ? 'var(--orange)' : '';
-  if (tab === 'analytics') renderAnalytics(state.liveData);
+function processReturn(sku) {
+  openActionModal('return_rental', 'Bridal', sku);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// MODAL
+// ACTION MODAL (dynamic forms)
 // ══════════════════════════════════════════════════════════════════════════
 
-function openHistoryModal() {
-  document.getElementById('history-modal').classList.add('open');
-  fetchHistory();
+let currentAction = null;
+
+function openActionModal(action, shop, presetSku) {
+  currentAction = { action, shop, presetSku };
+  const titles = {
+    new_item: 'Add New Item', restock: 'Restock Item', record_sale: 'Record Sale',
+    new_rental: 'New Rental', return_rental: 'Process Rental Return', status_change: 'Change Status',
+  };
+  document.getElementById('action-modal-title').textContent = `${titles[action]} — ${shop === 'Bags' ? 'Bags Shop' : 'Bridal Shop'}`;
+  document.getElementById('action-modal-body').innerHTML = buildActionForm(action, shop, presetSku);
+  document.getElementById('action-modal').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
 
-function closeHistoryModal() {
-  document.getElementById('history-modal').classList.remove('open');
+function closeActionModal() {
+  document.getElementById('action-modal').classList.remove('open');
   document.body.style.overflow = '';
+  currentAction = null;
 }
 
-// Close on overlay click
-document.getElementById('history-modal').addEventListener('click', function (e) {
-  if (e.target === this) closeHistoryModal();
-});
-
-// Escape key
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeHistoryModal();
-});
-
-// ══════════════════════════════════════════════════════════════════════════
-// SEARCH FILTERS
-// ══════════════════════════════════════════════════════════════════════════
-
-document.getElementById('table-search').addEventListener('input', () => {
-  renderLiveTable(state.liveData);
-});
-
-document.getElementById('history-search').addEventListener('input', () => {
-  renderHistoryTable(state.historyData);
-});
-
-// ══════════════════════════════════════════════════════════════════════════
-// EVENT LISTENERS
-// ══════════════════════════════════════════════════════════════════════════
-
-document.getElementById('action_type').addEventListener('change', onActionTypeChange);
-
-document.getElementById('bridal_status').addEventListener('change', function () {
-  const rentalFields = document.getElementById('rental-fields');
-  if (this.value === 'Rented') {
-    rentalFields.classList.remove('hidden');
-  } else {
-    rentalFields.classList.add('hidden');
-  }
-});
-
-document.getElementById('rental-product-select').addEventListener('change', onRentalProductSelect);
-
-// ══════════════════════════════════════════════════════════════════════════
-// BADGE HELPERS
-// ══════════════════════════════════════════════════════════════════════════
-
-function getBridalStatusBadge(status, overdue = false) {
-  if (!status) return '<span class="muted">—</span>';
-  if (overdue) return `<span class="badge badge-overdue">⚠️ ${escHtml(status)}</span>`;
-  const map = {
-    'Available':    'badge-available',
-    'Rented':       'badge-rented',
-    'In Alteration':'badge-alteration',
-    'Dry Cleaning': 'badge-cleaning',
-    'Sold':         'badge-sold',
-  };
-  return `<span class="badge ${map[status] || ''}">${escHtml(status)}</span>`;
-}
-
-function getActionBadge(action) {
-  const map = {
-    'New Item':      ['badge-new',    '✨'],
-    'Restock':       ['badge-restock','📦'],
-    'Retail Sale':   ['badge-sale',   '🛒'],
-    'Rental Out':    ['badge-rented', '🎁'],
-    'Rental Return': ['badge-return', '↩️'],
-    'Status Change': ['badge-status', '🔄'],
-  };
-  const [cls, icon] = map[action] || ['', '•'];
-  return `<span class="badge ${cls}">${icon} ${escHtml(action)}</span>`;
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// COLOR HELPER
-// ══════════════════════════════════════════════════════════════════════════
-
-function getColorHex(colorName) {
-  const map = {
-    black: '#1A1A1A', white: '#F5F5F5', red: '#DC2626', blue: '#2563EB',
-    green: '#16A34A', yellow: '#CA8A04', pink: '#EC4899', purple: '#7C3AED',
-    brown: '#92400E', tan: '#D97706', navy: '#1E3A5F', grey: '#6B7280',
-    gray: '#6B7280', beige: '#D4B483', gold: '#F59E0B', silver: '#94A3B8',
-    orange: '#FF7A00', cream: '#FEFCE8', nude: '#E8C9A0', camel: '#C19A6B',
-  };
-  const key = colorName?.toLowerCase().replace(/\s/g,'');
-  return map[key] || '#999';
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// SKU AUTOCOMPLETE
-// ══════════════════════════════════════════════════════════════════════════
-
-function updateSkuSuggestions() {
-  const dl = document.getElementById('sku-suggestions');
-  const shopSkus = state.liveData
-    .filter(r => r.shop_type === state.currentShop)
-    .map(r => r.item_sku);
-  dl.innerHTML = shopSkus.map(s => `<option value="${escHtml(s)}">`).join('');
-}
-
-// Auto-fill item name when SKU is entered
-document.getElementById('item_sku').addEventListener('change', function () {
-  const sku = this.value.trim().toUpperCase();
-  const match = state.liveData.find(r => r.item_sku === sku);
-  if (match) {
-    document.getElementById('item_name').value      = match.item_name;
-    document.getElementById('brand_designer').value = match.brand_designer || '';
-    if (state.currentShop === 'Bags') {
-      document.getElementById('bag_color').value     = match.bag_color || '';
-      document.getElementById('min_stock_alert').value = match.min_stock_alert || 2;
-    } else {
-      document.getElementById('bridal_size').value   = match.bridal_size || '';
-    }
-    showToast(`Auto-filled details for ${sku}`, 'info');
-  }
-});
-
-// ══════════════════════════════════════════════════════════════════════════
-// RENTAL — SELECT EXISTING PRODUCT
-// ══════════════════════════════════════════════════════════════════════════
-
-function populateRentalProductSelect() {
-  const sel = document.getElementById('rental-product-select');
-  if (!sel) return;
-  // All inventory items (gowns, accessories, bags) available for rental
-  const items = state.liveData;
-  sel.innerHTML = '<option value="">— Select from inventory —</option>';
+function productOptions(items, includeBlank = true) {
+  let opts = includeBlank ? '<option value="">— Select product —</option>' : '';
   items.forEach(r => {
-    const opt = document.createElement('option');
-    opt.value = r.item_sku;
-    opt.textContent = `${r.item_name} (${r.item_sku})${r.bridal_size ? ' · ' + r.bridal_size : ''}${r.shop_type === 'Bags' ? ' · accessory' : ''}`;
-    sel.appendChild(opt);
+    opts += `<option value="${escHtml(r.item_sku)}">${escHtml(r.item_name)} (${escHtml(r.item_sku)})${r.live_stock != null ? ' · stock ' + r.live_stock : ''}${r.bridal_status ? ' · ' + r.bridal_status : ''}</option>`;
   });
+  return opts;
 }
 
-function onRentalProductSelect() {
-  const sel = document.getElementById('rental-product-select');
-  const sku = sel.value;
-  if (!sku) return;
-  const match = state.liveData.find(r => r.item_sku === sku);
-  if (!match) return;
-  document.getElementById('item_sku').value      = match.item_sku;
-  document.getElementById('item_name').value     = match.item_name;
-  document.getElementById('brand_designer').value = match.brand_designer || '';
-  document.getElementById('bridal_size').value   = match.bridal_size || '';
-  document.getElementById('sell_price').value    = match.sell_price || '';
-  showToast(`Selected ${match.item_name} for rental`, 'info');
+function field(label, inner, hint = '') {
+  return `<div class="form-group"><label class="form-label">${label}</label>${inner}${hint ? `<div class="form-hint">${hint}</div>` : ''}</div>`;
 }
+function input(id, type = 'text', extra = '') { return `<input class="form-input" type="${type}" id="${id}" ${extra}>`; }
+function select(id, optionsHtml) { return `<select class="form-select" id="${id}">${optionsHtml}</select>`; }
 
-// ══════════════════════════════════════════════════════════════════════════
-// ROW ACTIONS — UPDATE / DELETE
-// ══════════════════════════════════════════════════════════════════════════
+function buildActionForm(action, shop, presetSku) {
+  const items = shopItems(shop);
+  const allItems = state.liveData; // for rental: all inventory including accessories
 
-function updateItem(sku) {
-  const match = state.liveData.find(r => r.item_sku === sku && r.shop_type === state.currentShop);
-  if (!match) { showToast('Item not found.', 'error'); return; }
-
-  // Pre-fill the form with the item's details
-  document.getElementById('item_sku').value      = match.item_sku;
-  document.getElementById('item_name').value     = match.item_name;
-  document.getElementById('brand_designer').value = match.brand_designer || '';
-  document.getElementById('stock_cost_price').value = match.stock_cost_price || '';
-  document.getElementById('sell_price').value    = match.sell_price || '';
-
-  if (state.currentShop === 'Bags') {
-    document.getElementById('bag_color').value       = match.bag_color || '';
-    document.getElementById('quantity_change').value = '';
-    document.getElementById('min_stock_alert').value = match.min_stock_alert || 2;
-    // Default to Restock for an existing bag item
-    document.getElementById('action_type').value = 'Restock';
-  } else {
-    document.getElementById('bridal_size').value   = match.bridal_size || '';
-    document.getElementById('bridal_status').value = match.bridal_status || '';
-    document.getElementById('quantity_change_bridal').value = '';
-    // Default to Status Change for an existing bridal item
-    document.getElementById('action_type').value = 'Status Change';
+  if (action === 'new_item') {
+    if (shop === 'Bags') {
+      return formWrap(`
+        ${field('SKU *', input('f_sku', 'text', 'placeholder="BAG-001" required'))}
+        ${field('Item Name *', input('f_name', 'text', 'placeholder="Classic Leather Tote" required'))}
+        ${row(field('Brand', input('f_brand', 'text', 'placeholder="Gucci"')), field('Color', input('f_color', 'text', 'placeholder="Black"')))}
+        ${row(field('Cost Price *', input('f_cost', 'number', 'placeholder="0.00" min="0" step="0.01" required')), field('Sell Price', input('f_sell', 'number', 'placeholder="0.00" min="0" step="0.01"')))}
+        ${row(field('Quantity *', input('f_qty', 'number', 'placeholder="5" required')), field('Low Stock Alert', input('f_min', 'number', 'value="2" min="0"')))}
+        ${field('Notes', `<textarea class="form-textarea" id="f_notes"></textarea>`)}
+      `);
+    } else {
+      return formWrap(`
+        ${field('SKU *', input('f_sku', 'text', 'placeholder="GOWN-001" required'))}
+        ${field('Gown/Item Name *', input('f_name', 'text', 'placeholder="Lace Mermaid Gown" required'))}
+        ${row(field('Designer', input('f_brand', 'text', 'placeholder="Vera Wang"')), field('Size', input('f_size', 'text', 'placeholder="UK 10"')))}
+        ${row(field('Cost Price *', input('f_cost', 'number', 'placeholder="0.00" min="0" step="0.01" required')), field('Sell/Rental Price', input('f_sell', 'number', 'placeholder="0.00" min="0" step="0.01"')))}
+        ${row(field('Quantity', input('f_qty', 'number', 'value="1"')), field('Status', select('f_status', statusOptions('Available'))))}
+        ${field('Notes', `<textarea class="form-textarea" id="f_notes"></textarea>`)}
+      `);
+    }
   }
 
-  onActionTypeChange();
-  showToast(`Editing ${sku} — choose an action and submit`, 'info');
-  document.getElementById('inventory-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (action === 'restock') {
+    return formWrap(`
+      ${field('Select Product *', select('f_sku', productOptions(items)), 'Choose an existing item to restock')}
+      ${row(field('Quantity to Add *', input('f_qty', 'number', 'placeholder="5" required')), field('Cost Price', input('f_cost', 'number', 'placeholder="0.00" min="0" step="0.01"')))}
+      ${field('Notes', `<textarea class="form-textarea" id="f_notes"></textarea>`)}
+    `);
+  }
+
+  if (action === 'record_sale') {
+    const sellable = items.filter(r => parseInt(r.live_stock || 0) > 0);
+    return formWrap(`
+      ${field('Select Product *', select('f_sku', productOptions(sellable)), 'Only items with stock available are shown')}
+      ${row(field('Quantity Sold *', input('f_qty', 'number', 'placeholder="1" min="1" required')), field('Sell Price', input('f_sell', 'number', 'placeholder="0.00" min="0" step="0.01"')))}
+      ${field('Notes', `<textarea class="form-textarea" id="f_notes"></textarea>`)}
+    `);
+  }
+
+  if (action === 'new_rental') {
+    // Available items from bridal inventory (all items, including accessories, that are Available)
+    const available = allItems.filter(r => !r.bridal_status || r.bridal_status === 'Available');
+    return formWrap(`
+      ${field('Select Available Item *', select('f_sku', productOptions(available)), 'Choose an available item from inventory to rent out')}
+      ${row(field('Customer Name & Contact *', input('f_customer', 'text', 'placeholder="Name — Phone / Email" required')), field('Return Due Date *', input('f_due', 'date', 'required')))}
+      ${row(field('Rental Price', input('f_sell', 'number', 'placeholder="0.00" min="0" step="0.01"')), field('Quantity', input('f_qty', 'number', 'value="1"')))}
+      ${field('Notes', `<textarea class="form-textarea" id="f_notes"></textarea>`)}
+    `);
+  }
+
+  if (action === 'return_rental') {
+    const rented = items.filter(r => r.bridal_status === 'Rented');
+    return formWrap(`
+      ${field('Select Rented Item *', select('f_sku', productOptions(rented), false), 'Choose the item being returned')}
+      ${row(field('Return Status', select('f_status', statusOptions('Returned'))), field('Late Fee (optional)', input('f_sell', 'number', 'placeholder="0.00" min="0" step="0.01"')))}
+      ${field('Notes', `<textarea class="form-textarea" id="f_notes"></textarea>`)}
+    `);
+  }
+
+  if (action === 'status_change') {
+    return formWrap(`
+      ${field('Select Product *', select('f_sku', productOptions(items)))}
+      ${field('New Status', select('f_status', statusOptions('Available')))}
+      ${field('Notes', `<textarea class="form-textarea" id="f_notes"></textarea>`)}
+    `);
+  }
+
+  return '<p>Unknown action.</p>';
 }
 
-async function deleteItem(sku) {
+function statusOptions(current) {
+  return VALID_STATUSES.map(s => `<option value="${s}"${s === current ? ' selected' : ''}>${s}</option>`).join('');
+}
+function row(a, b) { return `<div class="form-row">${a}${b}</div>`; }
+function formWrap(inner) { return `<form id="action-form" onsubmit="submitAction(event)">${inner}<button type="submit" class="btn-primary" style="margin-top:8px;"><i class="ri-check-line"></i> Submit</button></form>`; }
+
+async function submitAction(e) {
+  e.preventDefault();
+  const { action, shop } = currentAction;
+  const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const body = { shop_type: shop };
+  let actionType = '';
+
+  try {
+    if (action === 'new_item') {
+      actionType = 'New Item';
+      body.item_sku = val('f_sku'); body.item_name = val('f_name'); body.brand_designer = val('f_brand') || null;
+      body.stock_cost_price = val('f_cost') || 0; body.sell_price = val('f_sell') || 0;
+      body.quantity_change = val('f_qty') || 0; body.notes = val('f_notes') || null;
+      if (shop === 'Bags') { body.bag_color = val('f_color') || null; body.min_stock_alert = val('f_min') || 2; }
+      else { body.bridal_size = val('f_size') || null; body.bridal_status = val('f_status') || null; }
+    } else if (action === 'restock') {
+      actionType = 'Restock';
+      const item = itemsBySku(val('f_sku'), shop);
+      body.item_sku = val('f_sku'); body.item_name = item?.item_name; body.brand_designer = item?.brand_designer || null;
+      body.bag_color = item?.bag_color || null; body.bridal_size = item?.bridal_size || null;
+      body.stock_cost_price = val('f_cost') || 0; body.quantity_change = val('f_qty') || 0; body.notes = val('f_notes') || null;
+    } else if (action === 'record_sale') {
+      actionType = 'Retail Sale';
+      const item = itemsBySku(val('f_sku'), shop);
+      body.item_sku = val('f_sku'); body.item_name = item?.item_name; body.brand_designer = item?.brand_designer || null;
+      body.bag_color = item?.bag_color || null; body.bridal_size = item?.bridal_size || null;
+      body.stock_cost_price = item?.stock_cost_price || 0; body.sell_price = val('f_sell') || item?.sell_price || 0;
+      body.quantity_change = -Math.abs(parseInt(val('f_qty')) || 1); body.notes = val('f_notes') || null;
+    } else if (action === 'new_rental') {
+      actionType = 'Rental Out';
+      const item = state.liveData.find(r => r.item_sku === val('f_sku'));
+      body.item_sku = val('f_sku'); body.item_name = item?.item_name; body.brand_designer = item?.brand_designer || null;
+      body.bridal_size = item?.bridal_size || null; body.bridal_status = 'Rented';
+      body.stock_cost_price = 0; body.sell_price = val('f_sell') || 0;
+      body.quantity_change = -Math.abs(parseInt(val('f_qty')) || 1);
+      body.customer_name_contact = val('f_customer') || null; body.rental_due_date = val('f_due') || null;
+      body.notes = val('f_notes') || null;
+    } else if (action === 'return_rental') {
+      actionType = 'Rental Return';
+      const item = itemsBySku(val('f_sku'), shop);
+      body.item_sku = val('f_sku'); body.item_name = item?.item_name; body.brand_designer = item?.brand_designer || null;
+      body.bridal_size = item?.bridal_size || null; body.bridal_status = val('f_status') || 'Returned';
+      body.stock_cost_price = 0; body.sell_price = val('f_sell') || 0; body.quantity_change = 1;
+      body.customer_name_contact = item?.customer_name_contact || null; body.notes = val('f_notes') || null;
+    } else if (action === 'status_change') {
+      actionType = 'Status Change';
+      const item = itemsBySku(val('f_sku'), shop);
+      body.item_sku = val('f_sku'); body.item_name = item?.item_name; body.brand_designer = item?.brand_designer || null;
+      body.bridal_size = item?.bridal_size || null; body.bridal_status = val('f_status') || null;
+      body.stock_cost_price = 0; body.sell_price = 0; body.quantity_change = 0; body.notes = val('f_notes') || null;
+    }
+
+    body.action_type = actionType;
+    if (!body.item_sku || !body.item_name) { showToast('Please complete the required fields.', 'error'); return; }
+
+    const res = await fetch(`${API}/log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.details?.join(', ') || data.error || 'Server error');
+
+    showToast(data.message, 'success');
+    closeActionModal();
+    await refreshAll();
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+function itemsBySku(sku, shop) { return state.liveData.find(r => r.item_sku === sku && (shop ? r.shop_type === shop : true)); }
+
+// Quick update from row icon → open a relevant action modal
+function quickUpdate(sku, shop) {
+  const item = itemsBySku(sku, shop);
+  if (!item) return;
+  if (shop === 'Bags') openActionModal('restock', 'Bags');
+  else openActionModal('status_change', 'Bridal');
+  // pre-select the item
+  setTimeout(() => { const sel = document.getElementById('f_sku'); if (sel) { sel.value = sku; } }, 0);
+}
+
+async function deleteItem(sku, shop) {
   if (!confirm(`Delete ALL transaction history for SKU ${sku}?\nThis cannot be undone.`)) return;
   try {
-    const res = await fetch(`${API}/item/${encodeURIComponent(sku)}?shop_type=${state.currentShop}`, {
-      method: 'DELETE',
-    });
+    const res = await fetch(`${API}/item/${encodeURIComponent(sku)}?shop_type=${shop}`, { method: 'DELETE' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Server error');
     showToast(data.message, 'success');
     await refreshAll();
-  } catch (err) {
-    showToast(`Delete failed: ${err.message}`, 'error');
-  }
+  } catch (err) { showToast(`Delete failed: ${err.message}`, 'error'); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// IMPORT / EXPORT (CSV + Excel)
+// IMPORT / EXPORT
 // ══════════════════════════════════════════════════════════════════════════
 
-function buildExportRows() {
-  const shop = state.currentShop;
-  return state.liveData
-    .filter(r => r.shop_type === shop)
-    .map(r => ({
-      shop_type: r.shop_type,
-      item_sku: r.item_sku,
-      item_name: r.item_name,
-      brand_designer: r.brand_designer || '',
-      stock_cost_price: r.stock_cost_price,
-      sell_price: r.sell_price,
-      live_stock: r.live_stock,
-      min_stock_alert: r.min_stock_alert,
-      bag_color: r.bag_color || '',
-      bridal_size: r.bridal_size || '',
-      bridal_status: r.bridal_status || '',
-      rental_due_date: r.rental_due_date || '',
-      customer_name_contact: r.customer_name_contact || '',
-      last_action: r.last_action,
-      total_gross_profit: r.total_gross_profit,
-      profit_margin: r.profit_margin,
-    }));
+function buildExportRows(shop) {
+  return shopItems(shop).map(r => ({
+    shop_type: r.shop_type, item_sku: r.item_sku, item_name: r.item_name, brand_designer: r.brand_designer || '',
+    stock_cost_price: r.stock_cost_price, sell_price: r.sell_price, live_stock: r.live_stock,
+    min_stock_alert: r.min_stock_alert, bag_color: r.bag_color || '', bridal_size: r.bridal_size || '',
+    bridal_status: r.bridal_status || '', rental_due_date: r.rental_due_date || '',
+    customer_name_contact: r.customer_name_contact || '', last_action: r.last_action,
+    total_gross_profit: r.total_gross_profit, profit_margin: r.profit_margin,
+  }));
 }
 
 function downloadBlob(content, filename, mime) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
+  const a = document.createElement('a'); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
-function exportData(format) {
-  const rows = buildExportRows();
-  if (rows.length === 0) { showToast('No items to export for this shop.', 'error'); return; }
-  const base = `inventory-${state.currentShop.toLowerCase()}-${new Date().toISOString().slice(0,10)}`;
-
+function exportData(format, shop) {
+  const rows = buildExportRows(shop);
+  if (!rows.length) { showToast('No items to export.', 'error'); return; }
+  const base = `inventory-${shop.toLowerCase()}-${new Date().toISOString().slice(0,10)}`;
   if (format === 'csv') {
     const headers = Object.keys(rows[0]);
-    const csv = [
-      headers.join(','),
-      ...rows.map(r => headers.map(h => {
-        const v = r[h] == null ? '' : String(r[h]);
-        return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-      }).join(','))
-    ].join('\n');
+    const csv = [headers.join(','), ...rows.map(r => headers.map(h => { const v = r[h] == null ? '' : String(r[h]); return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; }).join(','))].join('\n');
     downloadBlob(csv, `${base}.csv`, 'text/csv;charset=utf-8;');
     showToast(`Exported ${rows.length} rows to CSV`, 'success');
   } else if (format === 'xlsx') {
     if (typeof XLSX === 'undefined') { showToast('Excel library not loaded.', 'error'); return; }
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, state.currentShop);
-    XLSX.writeFile(wb, `${base}.xlsx`);
-    showToast(`Exported ${rows.length} rows to Excel`, 'success');
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), shop);
+    XLSX.writeFile(wb, `${base}.xlsx`); showToast(`Exported ${rows.length} rows to Excel`, 'success');
   }
 }
 
@@ -983,90 +585,101 @@ function parseCsvText(text) {
   if (lines.length < 2) return [];
   const headers = lines[0].split(',').map(h => h.trim());
   return lines.slice(1).map(line => {
-    const vals = [];
-    let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { inQ = !inQ; continue; }
-      if (c === ',' && !inQ) { vals.push(cur); cur = ''; continue; }
-      cur += c;
-    }
-    vals.push(cur);
-    const obj = {};
-    headers.forEach((h, i) => obj[h] = (vals[i] || '').trim());
-    return obj;
+    const vals = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) { const c = line[i]; if (c === '"') { inQ = !inQ; continue; } if (c === ',' && !inQ) { vals.push(cur); cur = ''; continue; } cur += c; }
+    vals.push(cur); const obj = {}; headers.forEach((h, i) => obj[h] = (vals[i] || '').trim()); return obj;
   });
 }
 
 async function importData(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  event.target.value = '';
-
+  const file = event.target.files[0]; if (!file) return; event.target.value = '';
   try {
     let rows = [];
     if (/\.xlsx?$/.test(file.name)) {
       if (typeof XLSX === 'undefined') { showToast('Excel library not loaded.', 'error'); return; }
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      rows = XLSX.utils.sheet_to_json(ws);
-    } else {
-      const text = await file.text();
-      rows = parseCsvText(text);
-    }
-
-    if (rows.length === 0) { showToast('No rows found in file.', 'error'); return; }
-
+      rows = XLSX.utils.sheet_to_json(XLSX.read(await file.arrayBuffer(), { type: 'array' }).Sheets[0] || {});
+    } else { rows = parseCsvText(await file.text()); }
+    if (!rows.length) { showToast('No rows found.', 'error'); return; }
     let ok = 0, fail = 0;
     for (const row of rows) {
       const body = {
-        shop_type: row.shop_type || state.currentShop,
-        item_sku: row.item_sku || row.sku,
-        item_name: row.item_name || row.name,
-        brand_designer: row.brand_designer || '',
-        stock_cost_price: row.stock_cost_price || row.cost || 0,
-        sell_price: row.sell_price || row.price || 0,
-        quantity_change: row.quantity_change || row.qty_change || 0,
-        bag_color: row.bag_color || '',
-        min_stock_alert: row.min_stock_alert || 2,
-        bridal_size: row.bridal_size || '',
-        bridal_status: row.bridal_status || '',
-        rental_due_date: row.rental_due_date || '',
-        customer_name_contact: row.customer_name_contact || '',
-        action_type: row.action_type || 'New Item',
-        notes: row.notes || '',
+        shop_type: row.shop_type || 'Bags', item_sku: row.item_sku || row.sku, item_name: row.item_name || row.name,
+        brand_designer: row.brand_designer || '', stock_cost_price: row.stock_cost_price || row.cost || 0,
+        sell_price: row.sell_price || row.price || 0, quantity_change: row.quantity_change || row.qty_change || 0,
+        bag_color: row.bag_color || '', min_stock_alert: row.min_stock_alert || 2, bridal_size: row.bridal_size || '',
+        bridal_status: row.bridal_status || '', rental_due_date: row.rental_due_date || '',
+        customer_name_contact: row.customer_name_contact || '', action_type: row.action_type || 'New Item', notes: row.notes || '',
       };
       if (!body.item_sku || !body.item_name) { fail++; continue; }
-      try {
-        const res = await fetch(`${API}/log`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (res.ok) ok++; else fail++;
-      } catch { fail++; }
+      try { const res = await fetch(`${API}/log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); res.ok ? ok++ : fail++; } catch { fail++; }
     }
-
     showToast(`Import complete: ${ok} added, ${fail} failed`, ok > 0 ? 'success' : 'error');
     await refreshAll();
-  } catch (err) {
-    showToast(`Import failed: ${err.message}`, 'error');
-  }
+  } catch (err) { showToast(`Import failed: ${err.message}`, 'error'); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// INIT
+// AUDIT TRAIL
 // ══════════════════════════════════════════════════════════════════════════
 
+function openHistoryModal() { document.getElementById('history-modal').classList.add('open'); fetchHistory(); document.body.style.overflow = 'hidden'; }
+function closeHistoryModal() { document.getElementById('history-modal').classList.remove('open'); document.body.style.overflow = ''; }
+
+function renderHistoryTable(data) {
+  const search = (document.getElementById('history-search')?.value || '').toLowerCase();
+  let filtered = data;
+  if (search) filtered = data.filter(r => ['item_sku','item_name','action_type','customer_name_contact','notes'].some(k => (r[k]||'').toLowerCase().includes(search)));
+  const body = document.getElementById('history-table-body');
+  if (!filtered.length) { body.innerHTML = `<tr><td colspan="13">${emptyState('📭','No records found','')}</td></tr>`; return; }
+  body.innerHTML = filtered.map(r => {
+    const margin = parseFloat(r.profit_margin || 0);
+    return `<tr>
+      <td class="muted" style="white-space:nowrap;">${fmtDateTime(r.created_at)}</td>
+      <td><span class="badge ${r.shop_type === 'Bags' ? 'badge-new' : 'badge-alteration'}">${r.shop_type === 'Bags' ? '👜' : '👗'} ${escHtml(r.shop_type)}</span></td>
+      <td class="sku">${escHtml(r.item_sku)}</td><td style="max-width:180px;"><strong>${escHtml(r.item_name)}</strong></td>
+      <td>${getActionBadge(r.action_type)}</td>
+      <td class="money" style="${parseInt(r.quantity_change) < 0 ? 'color:var(--red);' : 'color:var(--green);'}">${parseInt(r.quantity_change) > 0 ? '+' : ''}${r.quantity_change}</td>
+      <td class="money muted">${fmtCurrency(r.stock_cost_price)}</td><td class="money">${fmtCurrency(r.sell_price)}</td>
+      <td class="money profit">${fmtCurrency(r.gross_profit)}</td>
+      <td style="white-space:nowrap;"><span style="font-size:12px;font-weight:700;color:${margin >= 50 ? 'var(--green)' : margin >= 20 ? 'var(--orange)' : 'var(--red)'}">${fmt(margin,1)}%</span></td>
+      <td>${getBridalStatusBadge(r.bridal_status)}</td>
+      <td class="muted" style="max-width:150px;font-size:12px;">${escHtml(r.customer_name_contact || '—')}</td>
+      <td class="muted" style="max-width:200px;font-size:12px;">${escHtml(r.notes || '—')}</td></tr>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// BADGES / COLOR
+// ══════════════════════════════════════════════════════════════════════════
+
+function getBridalStatusBadge(status, overdue = false) {
+  if (!status) return '<span class="muted">—</span>';
+  if (overdue) return `<span class="badge badge-overdue">⚠️ ${escHtml(status)}</span>`;
+  const map = { Available:'badge-available', Rented:'badge-rented', Returned:'badge-return', 'In Alteration':'badge-alteration', 'Dry Cleaning':'badge-cleaning', Sold:'badge-sold' };
+  return `<span class="badge ${map[status] || ''}">${escHtml(status)}</span>`;
+}
+function getActionBadge(action) {
+  const map = { 'New Item':['badge-new','✨'], Restock:['badge-restock','📦'], 'Retail Sale':['badge-sale','🛒'], 'Rental Out':['badge-rented','🎁'], 'Rental Return':['badge-return','↩️'], 'Status Change':['badge-status','🔄'] };
+  const [cls, icon] = map[action] || ['', '•'];
+  return `<span class="badge ${cls}">${icon} ${escHtml(action)}</span>`;
+}
+function getColorHex(c) {
+  const map = { black:'#1A1A1A', white:'#F5F5F5', red:'#DC2626', blue:'#2563EB', green:'#16A34A', yellow:'#CA8A04', pink:'#EC4899', purple:'#7C3AED', brown:'#92400E', tan:'#D97706', navy:'#1E3A5F', grey:'#6B7280', gray:'#6B7280', beige:'#D4B483', gold:'#F59E0B', silver:'#94A3B8', orange:'#FF7A00', cream:'#FEFCE8', nude:'#E8C9A0', camel:'#C19A6B' };
+  return map[(c || '').toLowerCase().replace(/\s/g, '')] || '#999';
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// EVENT WIRING + INIT
+// ══════════════════════════════════════════════════════════════════════════
+
+document.getElementById('action-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeActionModal(); });
+document.getElementById('history-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeHistoryModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeActionModal(); closeHistoryModal(); } });
+document.getElementById('history-search').addEventListener('input', () => renderHistoryTable(state.historyData));
+document.getElementById('bags-search').addEventListener('input', () => renderBagsView());
+document.getElementById('bridal-search').addEventListener('input', () => renderBridalSales());
+
 (async function init() {
-  // Set defaults
-  document.getElementById('shop_type_field').value = 'Bags';
-  updateActionTypeOptions('Bags');
-
-  // Load data
   await fetchLiveInventory();
-
-  // Auto-refresh every 60 seconds
   setInterval(fetchLiveInventory, 60000);
 })();
