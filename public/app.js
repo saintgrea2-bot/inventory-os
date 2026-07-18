@@ -177,9 +177,11 @@ function onActionTypeChange() {
     if (action === 'Rental Out') {
       rentalFields.classList.remove('hidden');
       bridalStatus.value = 'Rented';
+      populateRentalProductSelect();
     } else if (action === 'Rental Return') {
-      rentalFields.classList.add('hidden');
+      rentalFields.classList.remove('hidden');
       bridalStatus.value = 'Available';
+      populateRentalProductSelect();
     } else {
       rentalFields.classList.add('hidden');
     }
@@ -229,6 +231,7 @@ function onActionTypeChange() {
 document.getElementById('inventory-form').addEventListener('submit', async function (e) {
   e.preventDefault();
   const btn = document.getElementById('submit-btn');
+  const btnHTML = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner" style="border-color:#fff3;border-top-color:#fff;"></div> Logging…';
 
@@ -262,6 +265,7 @@ document.getElementById('inventory-form').addEventListener('submit', async funct
     if (!res.ok) throw new Error(data.details?.join(', ') || data.error || 'Server error');
 
     showToast(data.message, 'success');
+    btn.innerHTML = btnHTML;
     resetForm();
     await refreshAll();
 
@@ -269,8 +273,9 @@ document.getElementById('inventory-form').addEventListener('submit', async funct
     showToast(`Error: ${err.message}`, 'error');
     setConnectionStatus(false);
   } finally {
+    btn.innerHTML = btnHTML;
     btn.disabled = false;
-    onActionTypeChange(); // restore label
+    onActionTypeChange();
   }
 });
 
@@ -403,6 +408,7 @@ function renderLiveTable(data) {
       <th>Margin</th>
       <th>Last Action</th>
       <th>Updated</th>
+      <th class="th-actions">Actions</th>
     `;
   } else {
     head.innerHTML = `
@@ -418,13 +424,14 @@ function renderLiveTable(data) {
       <th>Return Due</th>
       <th>Customer</th>
       <th>Last Action</th>
+      <th class="th-actions">Actions</th>
     `;
   }
 
   if (filtered.length === 0) {
     body.innerHTML = `
       <tr>
-        <td colspan="${shop === 'Bags' ? 11 : 12}">
+        <td colspan="${shop === 'Bags' ? 12 : 13}">
           <div class="empty-state">
             <div class="empty-icon">${shop === 'Bags' ? '👜' : '👗'}</div>
             <div class="empty-title">No items found</div>
@@ -449,6 +456,11 @@ function renderLiveTable(data) {
         </div>
         <span class="margin-text">${fmt(margin, 1)}%</span>
       </div>`;
+    const actions = `
+      <td class="row-actions">
+        <button class="row-action-btn" onclick="updateItem('${escHtml(r.item_sku)}')" title="Update"><i class="ri-edit-line"></i></button>
+        <button class="row-action-btn danger" onclick="deleteItem('${escHtml(r.item_sku)}')" title="Delete"><i class="ri-delete-bin-line"></i></button>
+      </td>`;
 
     if (shop === 'Bags') {
       const stockClass = stock === 0 ? 'zero' : stock <= minAlert ? 'low' : 'good';
@@ -477,6 +489,7 @@ function renderLiveTable(data) {
           <td>${marginBar}</td>
           <td>${getActionBadge(r.last_action)}</td>
           <td class="muted">${fmtDate(r.last_updated)}</td>
+          ${actions}
         </tr>`;
     } else {
       return `
@@ -496,6 +509,7 @@ function renderLiveTable(data) {
           </td>
           <td class="muted">${escHtml(r.customer_name_contact || '—')}</td>
           <td>${getActionBadge(r.last_action)}</td>
+          ${actions}
         </tr>`;
     }
   }).join('');
@@ -743,6 +757,8 @@ document.getElementById('bridal_status').addEventListener('change', function () 
   }
 });
 
+document.getElementById('rental-product-select').addEventListener('change', onRentalProductSelect);
+
 // ══════════════════════════════════════════════════════════════════════════
 // BADGE HELPERS
 // ══════════════════════════════════════════════════════════════════════════
@@ -817,6 +833,227 @@ document.getElementById('item_sku').addEventListener('change', function () {
     showToast(`Auto-filled details for ${sku}`, 'info');
   }
 });
+
+// ══════════════════════════════════════════════════════════════════════════
+// RENTAL — SELECT EXISTING PRODUCT
+// ══════════════════════════════════════════════════════════════════════════
+
+function populateRentalProductSelect() {
+  const sel = document.getElementById('rental-product-select');
+  if (!sel) return;
+  // All inventory items (gowns, accessories, bags) available for rental
+  const items = state.liveData;
+  sel.innerHTML = '<option value="">— Select from inventory —</option>';
+  items.forEach(r => {
+    const opt = document.createElement('option');
+    opt.value = r.item_sku;
+    opt.textContent = `${r.item_name} (${r.item_sku})${r.bridal_size ? ' · ' + r.bridal_size : ''}${r.shop_type === 'Bags' ? ' · accessory' : ''}`;
+    sel.appendChild(opt);
+  });
+}
+
+function onRentalProductSelect() {
+  const sel = document.getElementById('rental-product-select');
+  const sku = sel.value;
+  if (!sku) return;
+  const match = state.liveData.find(r => r.item_sku === sku);
+  if (!match) return;
+  document.getElementById('item_sku').value      = match.item_sku;
+  document.getElementById('item_name').value     = match.item_name;
+  document.getElementById('brand_designer').value = match.brand_designer || '';
+  document.getElementById('bridal_size').value   = match.bridal_size || '';
+  document.getElementById('sell_price').value    = match.sell_price || '';
+  showToast(`Selected ${match.item_name} for rental`, 'info');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ROW ACTIONS — UPDATE / DELETE
+// ══════════════════════════════════════════════════════════════════════════
+
+function updateItem(sku) {
+  const match = state.liveData.find(r => r.item_sku === sku && r.shop_type === state.currentShop);
+  if (!match) { showToast('Item not found.', 'error'); return; }
+
+  // Pre-fill the form with the item's details
+  document.getElementById('item_sku').value      = match.item_sku;
+  document.getElementById('item_name').value     = match.item_name;
+  document.getElementById('brand_designer').value = match.brand_designer || '';
+  document.getElementById('stock_cost_price').value = match.stock_cost_price || '';
+  document.getElementById('sell_price').value    = match.sell_price || '';
+
+  if (state.currentShop === 'Bags') {
+    document.getElementById('bag_color').value       = match.bag_color || '';
+    document.getElementById('quantity_change').value = '';
+    document.getElementById('min_stock_alert').value = match.min_stock_alert || 2;
+    // Default to Restock for an existing bag item
+    document.getElementById('action_type').value = 'Restock';
+  } else {
+    document.getElementById('bridal_size').value   = match.bridal_size || '';
+    document.getElementById('bridal_status').value = match.bridal_status || '';
+    document.getElementById('quantity_change_bridal').value = '';
+    // Default to Status Change for an existing bridal item
+    document.getElementById('action_type').value = 'Status Change';
+  }
+
+  onActionTypeChange();
+  showToast(`Editing ${sku} — choose an action and submit`, 'info');
+  document.getElementById('inventory-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function deleteItem(sku) {
+  if (!confirm(`Delete ALL transaction history for SKU ${sku}?\nThis cannot be undone.`)) return;
+  try {
+    const res = await fetch(`${API}/item/${encodeURIComponent(sku)}?shop_type=${state.currentShop}`, {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Server error');
+    showToast(data.message, 'success');
+    await refreshAll();
+  } catch (err) {
+    showToast(`Delete failed: ${err.message}`, 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// IMPORT / EXPORT (CSV + Excel)
+// ══════════════════════════════════════════════════════════════════════════
+
+function buildExportRows() {
+  const shop = state.currentShop;
+  return state.liveData
+    .filter(r => r.shop_type === shop)
+    .map(r => ({
+      shop_type: r.shop_type,
+      item_sku: r.item_sku,
+      item_name: r.item_name,
+      brand_designer: r.brand_designer || '',
+      stock_cost_price: r.stock_cost_price,
+      sell_price: r.sell_price,
+      live_stock: r.live_stock,
+      min_stock_alert: r.min_stock_alert,
+      bag_color: r.bag_color || '',
+      bridal_size: r.bridal_size || '',
+      bridal_status: r.bridal_status || '',
+      rental_due_date: r.rental_due_date || '',
+      customer_name_contact: r.customer_name_contact || '',
+      last_action: r.last_action,
+      total_gross_profit: r.total_gross_profit,
+      profit_margin: r.profit_margin,
+    }));
+}
+
+function downloadBlob(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function exportData(format) {
+  const rows = buildExportRows();
+  if (rows.length === 0) { showToast('No items to export for this shop.', 'error'); return; }
+  const base = `inventory-${state.currentShop.toLowerCase()}-${new Date().toISOString().slice(0,10)}`;
+
+  if (format === 'csv') {
+    const headers = Object.keys(rows[0]);
+    const csv = [
+      headers.join(','),
+      ...rows.map(r => headers.map(h => {
+        const v = r[h] == null ? '' : String(r[h]);
+        return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+      }).join(','))
+    ].join('\n');
+    downloadBlob(csv, `${base}.csv`, 'text/csv;charset=utf-8;');
+    showToast(`Exported ${rows.length} rows to CSV`, 'success');
+  } else if (format === 'xlsx') {
+    if (typeof XLSX === 'undefined') { showToast('Excel library not loaded.', 'error'); return; }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, state.currentShop);
+    XLSX.writeFile(wb, `${base}.xlsx`);
+    showToast(`Exported ${rows.length} rows to Excel`, 'success');
+  }
+}
+
+function parseCsvText(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const vals = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; continue; }
+      if (c === ',' && !inQ) { vals.push(cur); cur = ''; continue; }
+      cur += c;
+    }
+    vals.push(cur);
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = (vals[i] || '').trim());
+    return obj;
+  });
+}
+
+async function importData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+
+  try {
+    let rows = [];
+    if (/\.xlsx?$/.test(file.name)) {
+      if (typeof XLSX === 'undefined') { showToast('Excel library not loaded.', 'error'); return; }
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(ws);
+    } else {
+      const text = await file.text();
+      rows = parseCsvText(text);
+    }
+
+    if (rows.length === 0) { showToast('No rows found in file.', 'error'); return; }
+
+    let ok = 0, fail = 0;
+    for (const row of rows) {
+      const body = {
+        shop_type: row.shop_type || state.currentShop,
+        item_sku: row.item_sku || row.sku,
+        item_name: row.item_name || row.name,
+        brand_designer: row.brand_designer || '',
+        stock_cost_price: row.stock_cost_price || row.cost || 0,
+        sell_price: row.sell_price || row.price || 0,
+        quantity_change: row.quantity_change || row.qty_change || 0,
+        bag_color: row.bag_color || '',
+        min_stock_alert: row.min_stock_alert || 2,
+        bridal_size: row.bridal_size || '',
+        bridal_status: row.bridal_status || '',
+        rental_due_date: row.rental_due_date || '',
+        customer_name_contact: row.customer_name_contact || '',
+        action_type: row.action_type || 'New Item',
+        notes: row.notes || '',
+      };
+      if (!body.item_sku || !body.item_name) { fail++; continue; }
+      try {
+        const res = await fetch(`${API}/log`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res.ok) ok++; else fail++;
+      } catch { fail++; }
+    }
+
+    showToast(`Import complete: ${ok} added, ${fail} failed`, ok > 0 ? 'success' : 'error');
+    await refreshAll();
+  } catch (err) {
+    showToast(`Import failed: ${err.message}`, 'error');
+  }
+}
 
 // ══════════════════════════════════════════════════════════════════════════
 // INIT

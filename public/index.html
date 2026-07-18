@@ -6,6 +6,10 @@
   <title>InventoryOS — Dual-Shop Management</title>
   <meta name="description" content="Full-stack inventory management system for Ladies Bags and Bridal Shop. Real-time stock tracking, rental management, and profit analytics." />
 
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/img/bag-icon.png" />
+  <link rel="apple-touch-icon" href="/img/bag-icon.png" />
+
   <!-- Fonts & Icons -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -13,6 +17,9 @@
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.3.0/fonts/remixicon.css" rel="stylesheet" />
 
   <link rel="stylesheet" href="style.css" />
+
+  <!-- SheetJS for Excel import/export -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <style>
     /* Inline critical overrides */
@@ -28,7 +35,7 @@
 <header class="app-header">
   <div class="header-inner">
     <a href="/" class="logo">
-      <div class="logo-icon">🛍</div>
+      <div class="logo-icon"><img src="/img/bag-icon.png" alt="InventoryOS" /></div>
       <span class="logo-text">Inventory<span>OS</span></span>
     </a>
 
@@ -219,6 +226,13 @@
             </div>
 
             <div class="field-group hidden" id="rental-fields">
+              <div class="form-group">
+                <label class="form-label" for="rental-product-select">Select Existing Product <span class="required">*</span></label>
+                <select class="form-select" id="rental-product-select" name="rental_product_select">
+                  <option value="">— Select from inventory —</option>
+                </select>
+                <div class="form-hint">Choose an existing item (gowns, accessories, bags) to rent out</div>
+              </div>
               <div class="form-row">
                 <div class="form-group">
                   <label class="form-label" for="customer_name_contact">Customer Name &amp; Contact</label>
@@ -306,6 +320,20 @@
                   onclick="setTableTab('analytics')" style="font-size:12px; padding:6px 12px;">
             <i class="ri-bar-chart-line"></i> Analytics
           </button>
+        </div>
+
+        <!-- Import / Export -->
+        <div class="io-toolbar">
+          <button class="btn-secondary" onclick="exportData('csv')" title="Export CSV" style="font-size:12px; padding:6px 10px;">
+            <i class="ri-download-2-line"></i> CSV
+          </button>
+          <button class="btn-secondary" onclick="exportData('xlsx')" title="Export Excel" style="font-size:12px; padding:6px 10px;">
+            <i class="ri-file-excel-line"></i> Excel
+          </button>
+          <button class="btn-secondary" onclick="document.getElementById('import-file').click()" title="Import CSV/Excel" style="font-size:12px; padding:6px 10px;">
+            <i class="ri-upload-2-line"></i> Import
+          </button>
+          <input type="file" id="import-file" accept=".csv,.xlsx,.xls" style="display:none;" onchange="importData(event)" />
         </div>
 
         <button class="btn-icon" onclick="refreshAll()" title="Refresh">

@@ -95,6 +95,14 @@ body {
   justify-content: center;
   font-size: 18px;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.logo-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
 }
 
 .logo-text {
@@ -775,3 +783,119 @@ td.money.profit { color: var(--green); }
 
 .conn-dot.online  { background: var(--green); box-shadow: 0 0 0 3px rgba(22,163,74,0.2); }
 .conn-dot.offline { background: var(--red); }
+
+/* ── Row Action Buttons (Update / Delete) ── */
+.row-actions {
+  white-space: nowrap;
+  text-align: right;
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.th-actions { text-align: right; }
+
+.row-action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--charcoal-mid);
+  transition: var(--transition);
+}
+
+.row-action-btn:hover { border-color: var(--orange); color: var(--orange); background: var(--orange-tint); }
+.row-action-btn.danger:hover { border-color: var(--red); color: var(--red); background: var(--red-bg); }
+
+/* ── Import / Export Toolbar ── */
+.io-toolbar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+/* ── Mobile Responsiveness ── */
+@media (max-width: 768px) {
+  .header-inner {
+    height: auto;
+    min-height: 56px;
+    padding: 8px 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .logo-text { font-size: 16px; }
+  .logo-icon { width: 32px; height: 32px; }
+
+  .header-divider { display: none; }
+
+  .shop-toggle { width: 100%; order: 3; }
+  .shop-toggle-btn { flex: 1; padding: 8px 10px; font-size: 12px; }
+
+  .header-actions { margin-left: 0; gap: 6px; }
+  .conn-status { font-size: 11px; }
+  #history-btn span,
+  #history-btn { padding: 6px 10px; font-size: 12px; }
+
+  .app-layout {
+    padding: 12px;
+    gap: 16px;
+    grid-template-columns: 1fr;
+  }
+
+  aside { order: 2; }
+  .right-panel { order: 1; }
+
+  .stats-row {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .stat-card { padding: 12px 10px; }
+  .stat-value { font-size: 20px; }
+  .stat-label { font-size: 10px; }
+
+  .card-body { padding: 14px; }
+  .card-header { padding: 12px 14px; }
+
+  .form-row { grid-template-columns: 1fr; }
+
+  /* Table: make it scroll horizontally and tighten columns */
+  .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { font-size: 12px; min-width: 600px; }
+  thead th { padding: 8px 10px; font-size: 10px; }
+  td { padding: 8px 10px; }
+
+  /* Keep row actions visible and tappable */
+  .row-action-btn { width: 32px; height: 32px; }
+
+  /* Toolbar wraps and stays usable */
+  .io-toolbar { flex-wrap: wrap; }
+  .io-toolbar .btn-secondary { padding: 6px 8px; font-size: 11px; }
+
+  /* Modal full-width */
+  .modal { max-width: 100%; max-height: 90vh; border-radius: 12px; }
+  .modal-header { padding: 14px 16px; flex-wrap: wrap; gap: 8px; }
+  .modal-body { padding: 14px 16px; }
+
+  .search-bar { width: 100% !important; }
+
+  .btn-primary { padding: 14px 16px; font-size: 15px; }
+
+  /* Toasts span width on small screens */
+  #toast-container { left: 12px; right: 12px; bottom: 12px; }
+  .toast { min-width: 0; max-width: none; width: 100%; }
+}
+
+@media (max-width: 480px) {
+  .stats-row { grid-template-columns: 1fr; }
+  .shop-toggle-btn { font-size: 11px; padding: 8px 6px; }
+  .logo-text { font-size: 15px; }
+  .stat-value { font-size: 22px; }
+}

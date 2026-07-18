@@ -262,4 +262,33 @@ router.get('/history', asyncHandler(async (req, res) => {
   });
 }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DELETE /api/inventory/item/:sku
+// Removes the full transaction history for a given SKU (scoped to shop_type)
+// ═══════════════════════════════════════════════════════════════════════════
+router.delete('/item/:sku', asyncHandler(async (req, res) => {
+  const { sku } = req.params;
+  const { shop_type } = req.query;
+
+  if (!sku) return res.status(400).json({ error: 'SKU is required.' });
+  if (shop_type && !['Bags', 'Bridal'].includes(shop_type))
+    return res.status(400).json({ error: 'shop_type must be "Bags" or "Bridal".' });
+
+  const normalizedSku = String(sku).trim().toUpperCase();
+  const where = shop_type
+    ? `WHERE item_sku = $1 AND shop_type = $2`
+    : `WHERE item_sku = $1`;
+  const values = shop_type ? [normalizedSku, shop_type] : [normalizedSku];
+
+  const result = await pool.query(
+    `DELETE FROM unified_inventory_history ${where} RETURNING id;`,
+    values
+  );
+
+  return res.json({
+    message: `✅ Deleted ${result.rowCount} transaction(s) for SKU ${normalizedSku}`,
+    deleted: result.rowCount,
+  });
+}));
+
 module.exports = router;
