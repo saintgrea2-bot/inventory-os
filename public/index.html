@@ -6,9 +6,9 @@
   <title>InventoryOS — Dual-Shop Management</title>
   <meta name="description" content="Full-stack inventory management system for Ladies Bags and Bridal Shop. Real-time stock tracking, rental management, and profit analytics." />
 
-  <!-- Favicon (system icon) -->
-  <link rel="icon" type="image/png" href="/img/inventory-logo.png" />
-  <link rel="apple-touch-icon" href="/img/inventory-logo.png" />
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/img/bag-icon.png" />
+  <link rel="apple-touch-icon" href="/img/bag-icon.png" />
 
   <!-- Fonts & Icons -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -16,7 +16,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.3.0/fonts/remixicon.css" rel="stylesheet" />
 
-  <link rel="stylesheet" href="style.css?v=20260718b" />
+  <link rel="stylesheet" href="style.css" />
 
   <!-- SheetJS for Excel import/export -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -29,7 +29,7 @@
 <header class="app-header">
   <div class="header-inner">
     <a href="/" class="logo" onclick="event.preventDefault();switchView('dashboard')">
-      <div class="logo-icon"><img src="/img/inventory-logo.png" alt="InventoryOS" /></div>
+      <div class="logo-icon"><img src="/img/bag-icon.png" alt="InventoryOS" /></div>
       <span class="logo-text">Inventory<span>OS</span></span>
     </a>
 
@@ -38,10 +38,10 @@
         <i class="ri-dashboard-line"></i> <span>Dashboard</span>
       </button>
       <button class="nav-tab" id="nav-bags" onclick="switchView('bags')" role="tab">
-        <img src="/img/bag-icon.png" alt="Bags Shop" class="nav-tab-icon" /> <span>Bags Shop</span>
+        <i class="ri-handbag-line"></i> <span>Bags Shop</span>
       </button>
       <button class="nav-tab" id="nav-bridal" onclick="switchView('bridal')" role="tab">
-        <img src="/img/bridal-logo.png" alt="Bridal Shop" class="nav-tab-icon" /> <span>Bridal Shop</span>
+        <i class="ri-scissors-line"></i> <span>Bridal Shop</span>
       </button>
     </nav>
 
@@ -228,6 +228,6 @@
 </div>
 
 <div id="toast-container" aria-live="polite"></div>
-<script src="app.js?v=20260718b"></script>
+<script src="app.js"></script>
 </body>
 </html>
