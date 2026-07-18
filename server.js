@@ -37,6 +37,9 @@ async function initSchema() {
     } else {
       console.log('✅  Database table verified — ready.');
     }
+
+    // ── Lightweight migrations: add columns that may not exist on older DBs ──
+    await client.query(`ALTER TABLE unified_inventory_history ADD COLUMN IF NOT EXISTS item_image TEXT;`);
   } catch (err) {
     console.error('❌  Schema init failed:', err.message);
   } finally {
@@ -48,8 +51,8 @@ async function initSchema() {
 const app = express();
 
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve static frontend
 app.use(express.static(path.join(__dirname, 'public')));

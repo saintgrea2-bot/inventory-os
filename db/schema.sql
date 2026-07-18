@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS unified_inventory_history (
     item_sku              VARCHAR(100) NOT NULL,
     item_name             VARCHAR(255) NOT NULL,
     brand_designer        VARCHAR(100),
+    item_image            TEXT,
 
     -- Financials
     stock_cost_price      DECIMAL(10, 2) NOT NULL DEFAULT 0.00,

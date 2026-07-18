@@ -24,7 +24,7 @@ function fmt(num, decimals = 2) {
   if (isNaN(n)) return '—';
   return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
-function fmtCurrency(num) { const n = parseFloat(num); return isNaN(n) ? '—' : '$' + fmt(n); }
+function fmtCurrency(num) { const n = parseFloat(num); return isNaN(n) ? '—' : 'ETB ' + fmt(n); }
 function fmtDate(s) { if (!s) return '—'; const d = new Date(s); return isNaN(d) ? s : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
 function fmtDateTime(s) { if (!s) return '—'; const d = new Date(s); return isNaN(d) ? s : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
 function isOverdue(s) { return s && new Date(s) < new Date(); }
@@ -184,13 +184,13 @@ function renderBagsView() {
 function renderBridalSales() {
   const bridal = shopItems('Bridal');
   const stock = bridal.reduce((s, r) => s + parseInt(r.live_stock || 0), 0);
-  const profit = bridal.reduce((s, r) => s + parseFloat(r.total_gross_profit || 0), 0);
+  const available = bridal.filter(r => !r.bridal_status || r.bridal_status === 'Available').length;
   const rented = bridal.filter(r => r.bridal_status === 'Rented').length;
   document.getElementById('bridal-stats').innerHTML = `
     ${statCard('Items', bridal.length, 'orange')}
-    ${statCard('Stock', stock, 'green')}
-    ${statCard('Gross Profit', fmtCurrency(profit), 'blue')}
+    ${statCard('Available', available, 'green')}
     ${statCard('Rented', rented, 'red')}
+    ${statCard('Stock (owned)', stock, 'blue')}
   `;
   renderShopTable('bridal-table', bridal, 'Bridal', 'bridal-search');
 }
@@ -242,7 +242,7 @@ function renderShopTable(tableId, data, shop, searchId) {
       const si = stock === 0 ? '🔴' : stock <= minAlert ? '🟡' : '🟢';
       return `<tr class="${rowClass}">
         <td class="sku">${escHtml(r.item_sku)}</td>
-        <td><strong>${escHtml(r.item_name)}</strong></td>
+        <td><div class="item-cell">${imgThumb(r,38)}<strong>${escHtml(r.item_name)}</strong></div></td>
         <td class="muted">${escHtml(r.brand_designer || '—')}</td>
         <td>${r.bag_color ? `<div class="color-swatch"><span class="swatch-dot" style="background:${getColorHex(r.bag_color)};"></span>${escHtml(r.bag_color)}</div>` : '<span class="muted">—</span>'}</td>
         <td><span class="stock-count ${sc}">${si} ${stock}</span></td>
@@ -253,7 +253,7 @@ function renderShopTable(tableId, data, shop, searchId) {
     } else {
       return `<tr class="${rowClass}">
         <td class="sku">${escHtml(r.item_sku)}</td>
-        <td><strong>${escHtml(r.item_name)}</strong></td>
+        <td><div class="item-cell">${imgThumb(r,38)}<strong>${escHtml(r.item_name)}</strong></div></td>
         <td class="muted">${escHtml(r.brand_designer || '—')}</td>
         <td class="muted">${escHtml(r.bridal_size || '—')}</td>
         <td>${getBridalStatusBadge(r.bridal_status, overdue)}</td>
@@ -320,7 +320,7 @@ function rentalCard(r, withReturnBtn) {
   return `
     <div class="rental-item ${overdue ? 'overdue' : ''}">
       <div class="rental-item-top">
-        <span class="rental-name">${escHtml(r.item_name)}</span>
+        <div class="rental-item-head">${imgThumb(r,44)}<span class="rental-name">${escHtml(r.item_name)}</span></div>
         ${getBridalStatusBadge(r.bridal_status, overdue)}
       </div>
       <div class="rental-meta"><strong>${escHtml(r.item_sku)}</strong>${r.bridal_size ? ` · Size ${escHtml(r.bridal_size)}` : ''}${r.brand_designer ? ` · ${escHtml(r.brand_designer)}` : ''}</div>
@@ -342,6 +342,7 @@ let currentAction = null;
 
 function openActionModal(action, shop, presetSku) {
   currentAction = { action, shop, presetSku };
+  currentItemImage = null;
   const titles = {
     new_item: 'Add New Item', restock: 'Restock Item', record_sale: 'Record Sale',
     new_rental: 'New Rental', return_rental: 'Process Rental Return', status_change: 'Change Status',
@@ -372,6 +373,102 @@ function field(label, inner, hint = '') {
 function input(id, type = 'text', extra = '') { return `<input class="form-input" type="${type}" id="${id}" ${extra}>`; }
 function select(id, optionsHtml) { return `<select class="form-select" id="${id}">${optionsHtml}</select>`; }
 
+// ══════════════════════════════════════════════════════════════════════════
+// PRODUCT IMAGE (browse / capture / URL)
+// ══════════════════════════════════════════════════════════════════════════
+
+let currentItemImage = null;
+
+function imageField() {
+  return `<div class="form-group">
+    <label class="form-label">Product Image</label>
+    <div class="image-field">
+      <div class="image-methods">
+        <button type="button" class="image-method active" onclick="setImageMethod(this,'browse')">📁 Browse</button>
+        <button type="button" class="image-method" onclick="setImageMethod(this,'capture')">📷 Capture</button>
+        <button type="button" class="image-method" onclick="setImageMethod(this,'url')">🔗 URL</button>
+      </div>
+      <div class="image-inputs">
+        <input type="file" id="f_img_browse" accept="image/*" style="display:none" onchange="onImagePick(event)">
+        <input type="file" id="f_img_capture" accept="image/*" capture="environment" style="display:none" onchange="onImagePick(event)">
+        <input type="url" class="form-input" id="f_img_url" placeholder="https://example.com/image.jpg" oninput="onImageUrlInput(event)" style="display:none">
+        <button type="button" class="btn-secondary btn-sm" id="f_img_pickbtn" onclick="document.getElementById('f_img_browse').click()"><i class="ri-upload-2-line"></i> Choose file…</button>
+      </div>
+      <div class="image-preview" id="f_img_preview"></div>
+      <div class="form-hint">Optional. Browse a file, take a photo, or paste an image URL.</div>
+    </div>
+  </div>`;
+}
+
+function setImageMethod(btn, method) {
+  document.querySelectorAll('.image-method').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const browse = document.getElementById('f_img_browse');
+  const capture = document.getElementById('f_img_capture');
+  const url = document.getElementById('f_img_url');
+  const pickbtn = document.getElementById('f_img_pickbtn');
+  if (!pickbtn) return;
+  url.style.display = 'none'; pickbtn.style.display = 'none';
+  if (method === 'browse') { pickbtn.style.display = ''; pickbtn.innerHTML = '<i class="ri-upload-2-line"></i> Choose file…'; pickbtn.onclick = () => browse.click(); }
+  else if (method === 'capture') { pickbtn.style.display = ''; pickbtn.innerHTML = '<i class="ri-camera-line"></i> Take photo'; pickbtn.onclick = () => capture.click(); }
+  else if (method === 'url') { url.style.display = ''; }
+}
+
+async function onImagePick(event) {
+  const file = event.target.files[0]; if (!file) return;
+  try {
+    const dataUrl = await fileToResizedDataUrl(file, 800, 0.8);
+    currentItemImage = dataUrl;
+    showImagePreview(dataUrl);
+  } catch (e) { showToast('Could not read image: ' + e.message, 'error'); }
+  event.target.value = '';
+}
+
+function onImageUrlInput(event) {
+  const url = event.target.value.trim();
+  if (url) { currentItemImage = url; showImagePreview(url); }
+  else { currentItemImage = null; const pv = document.getElementById('f_img_preview'); if (pv) pv.innerHTML = ''; }
+}
+
+function showImagePreview(src) {
+  const pv = document.getElementById('f_img_preview'); if (!pv) return;
+  pv.innerHTML = `<img src="${escHtml(src)}" alt="preview"><button type="button" class="image-clear" onclick="clearImage()">✕ Remove</button>`;
+}
+
+function clearImage() {
+  currentItemImage = null;
+  const pv = document.getElementById('f_img_preview'); if (pv) pv.innerHTML = '';
+  const url = document.getElementById('f_img_url'); if (url) url.value = '';
+}
+
+function fileToResizedDataUrl(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) { height = Math.round(height * maxDim / width); width = maxDim; }
+        else if (height > width && height > maxDim) { width = Math.round(width * maxDim / height); height = maxDim; }
+        else if (width > maxDim) { width = maxDim; height = maxDim; }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function imgThumb(r, size) {
+  if (!r || !r.item_image) return '';
+  return `<img class="img-thumb" src="${escHtml(r.item_image)}" alt="${escHtml(r.item_name || '')}" style="width:${size}px;height:${size}px;" loading="lazy" onerror="this.style.display='none'">`;
+}
+
 function buildActionForm(action, shop, presetSku) {
   const items = shopItems(shop);
   const allItems = state.liveData; // for rental: all inventory including accessories
@@ -384,6 +481,7 @@ function buildActionForm(action, shop, presetSku) {
         ${row(field('Brand', input('f_brand', 'text', 'placeholder="Gucci"')), field('Color', input('f_color', 'text', 'placeholder="Black"')))}
         ${row(field('Cost Price *', input('f_cost', 'number', 'placeholder="0.00" min="0" step="0.01" required')), field('Sell Price', input('f_sell', 'number', 'placeholder="0.00" min="0" step="0.01"')))}
         ${row(field('Quantity *', input('f_qty', 'number', 'placeholder="5" required')), field('Low Stock Alert', input('f_min', 'number', 'value="2" min="0"')))}
+        ${imageField()}
         ${field('Notes', `<textarea class="form-textarea" id="f_notes"></textarea>`)}
       `);
     } else {
@@ -393,6 +491,7 @@ function buildActionForm(action, shop, presetSku) {
         ${row(field('Designer', input('f_brand', 'text', 'placeholder="Vera Wang"')), field('Size', input('f_size', 'text', 'placeholder="UK 10"')))}
         ${row(field('Cost Price *', input('f_cost', 'number', 'placeholder="0.00" min="0" step="0.01" required')), field('Sell/Rental Price', input('f_sell', 'number', 'placeholder="0.00" min="0" step="0.01"')))}
         ${row(field('Quantity', input('f_qty', 'number', 'value="1"')), field('Status', select('f_status', statusOptions('Available'))))}
+        ${imageField()}
         ${field('Notes', `<textarea class="form-textarea" id="f_notes"></textarea>`)}
       `);
     }
@@ -429,8 +528,8 @@ function buildActionForm(action, shop, presetSku) {
   if (action === 'return_rental') {
     const rented = items.filter(r => r.bridal_status === 'Rented');
     return formWrap(`
-      ${field('Select Rented Item *', select('f_sku', productOptions(rented), false), 'Choose the item being returned')}
-      ${row(field('Return Status', select('f_status', statusOptions('Returned'))), field('Late Fee (optional)', input('f_sell', 'number', 'placeholder="0.00" min="0" step="0.01"')))}
+      ${field('Select Rented Item *', select('f_sku', productOptions(rented), false), 'Choose the item being returned — it goes back to Available stock')}
+      ${row(field('Return Status', select('f_status', statusOptions('Available'))), field('Late Fee (optional)', input('f_sell', 'number', 'placeholder="0.00" min="0" step="0.01"')))}
       ${field('Notes', `<textarea class="form-textarea" id="f_notes"></textarea>`)}
     `);
   }
@@ -463,6 +562,7 @@ async function submitAction(e) {
     if (action === 'new_item') {
       actionType = 'New Item';
       body.item_sku = val('f_sku'); body.item_name = val('f_name'); body.brand_designer = val('f_brand') || null;
+      body.item_image = currentItemImage || null;
       body.stock_cost_price = val('f_cost') || 0; body.sell_price = val('f_sell') || 0;
       body.quantity_change = val('f_qty') || 0; body.notes = val('f_notes') || null;
       if (shop === 'Bags') { body.bag_color = val('f_color') || null; body.min_stock_alert = val('f_min') || 2; }
@@ -486,15 +586,15 @@ async function submitAction(e) {
       body.item_sku = val('f_sku'); body.item_name = item?.item_name; body.brand_designer = item?.brand_designer || null;
       body.bridal_size = item?.bridal_size || null; body.bridal_status = 'Rented';
       body.stock_cost_price = 0; body.sell_price = val('f_sell') || 0;
-      body.quantity_change = -Math.abs(parseInt(val('f_qty')) || 1);
+      body.quantity_change = 0;
       body.customer_name_contact = val('f_customer') || null; body.rental_due_date = val('f_due') || null;
       body.notes = val('f_notes') || null;
     } else if (action === 'return_rental') {
       actionType = 'Rental Return';
       const item = itemsBySku(val('f_sku'), shop);
       body.item_sku = val('f_sku'); body.item_name = item?.item_name; body.brand_designer = item?.brand_designer || null;
-      body.bridal_size = item?.bridal_size || null; body.bridal_status = val('f_status') || 'Returned';
-      body.stock_cost_price = 0; body.sell_price = val('f_sell') || 0; body.quantity_change = 1;
+      body.bridal_size = item?.bridal_size || null; body.bridal_status = val('f_status') || 'Available';
+      body.stock_cost_price = 0; body.sell_price = val('f_sell') || 0; body.quantity_change = 0;
       body.customer_name_contact = item?.customer_name_contact || null; body.notes = val('f_notes') || null;
     } else if (action === 'status_change') {
       actionType = 'Status Change';
@@ -549,6 +649,7 @@ async function deleteItem(sku, shop) {
 function buildExportRows(shop) {
   return shopItems(shop).map(r => ({
     shop_type: r.shop_type, item_sku: r.item_sku, item_name: r.item_name, brand_designer: r.brand_designer || '',
+    item_image: r.item_image || '',
     stock_cost_price: r.stock_cost_price, sell_price: r.sell_price, live_stock: r.live_stock,
     min_stock_alert: r.min_stock_alert, bag_color: r.bag_color || '', bridal_size: r.bridal_size || '',
     bridal_status: r.bridal_status || '', rental_due_date: r.rental_due_date || '',
@@ -605,6 +706,7 @@ async function importData(event) {
       const body = {
         shop_type: row.shop_type || 'Bags', item_sku: row.item_sku || row.sku, item_name: row.item_name || row.name,
         brand_designer: row.brand_designer || '', stock_cost_price: row.stock_cost_price || row.cost || 0,
+        item_image: row.item_image || '',
         sell_price: row.sell_price || row.price || 0, quantity_change: row.quantity_change || row.qty_change || 0,
         bag_color: row.bag_color || '', min_stock_alert: row.min_stock_alert || 2, bridal_size: row.bridal_size || '',
         bridal_status: row.bridal_status || '', rental_due_date: row.rental_due_date || '',

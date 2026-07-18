@@ -18,6 +18,7 @@ router.post('/log', asyncHandler(async (req, res) => {
     item_sku,
     item_name,
     brand_designer,
+    item_image,
     stock_cost_price,
     sell_price,
     quantity_change,
@@ -62,6 +63,7 @@ router.post('/log', asyncHandler(async (req, res) => {
   min_stock_alert    = parseInt(min_stock_alert)       || 2;
   item_sku           = String(item_sku).trim().toUpperCase();
   brand_designer     = brand_designer   || null;
+  item_image         = item_image       || null;
   bag_color          = bag_color        || null;
   bridal_size        = bridal_size      || null;
   bridal_status      = bridal_status    || null;
@@ -72,19 +74,19 @@ router.post('/log', asyncHandler(async (req, res) => {
   // ── Insert ────────────────────────────────────────────────────────────────
   const sql = `
     INSERT INTO unified_inventory_history (
-      shop_type, item_sku, item_name, brand_designer,
+      shop_type, item_sku, item_name, brand_designer, item_image,
       stock_cost_price, sell_price,
       quantity_change, min_stock_alert,
       bag_color, bridal_size, bridal_status,
       rental_due_date, customer_name_contact,
       action_type, notes
     ) VALUES (
-      $1, $2, $3, $4,
-      $5, $6,
-      $7, $8,
-      $9, $10, $11,
-      $12, $13,
-      $14, $15
+      $1, $2, $3, $4, $5,
+      $6, $7,
+      $8, $9,
+      $10, $11, $12,
+      $13, $14,
+      $15, $16
     )
     RETURNING
       id, created_at, item_sku, item_name, action_type,
@@ -95,7 +97,7 @@ router.post('/log', asyncHandler(async (req, res) => {
   `;
 
   const values = [
-    shop_type, item_sku, item_name, brand_designer,
+    shop_type, item_sku, item_name, brand_designer, item_image,
     stock_cost_price, sell_price,
     quantity_change, min_stock_alert,
     bag_color, bridal_size, bridal_status,
@@ -155,6 +157,7 @@ router.get('/live', asyncHandler(async (req, res) => {
       base.item_sku,
       base.item_name,
       base.brand_designer,
+      base.item_image,
       base.shop_type,
       base.bag_color,
       base.bridal_size,
@@ -239,7 +242,7 @@ router.get('/history', asyncHandler(async (req, res) => {
 
   const sql = `
     SELECT
-      id, created_at, shop_type, item_sku, item_name, brand_designer,
+      id, created_at, shop_type, item_sku, item_name, brand_designer, item_image,
       stock_cost_price, sell_price, gross_profit,
       CASE
         WHEN sell_price = 0 THEN 0.00
