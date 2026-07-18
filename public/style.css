@@ -224,6 +224,16 @@ td.money.profit { color: var(--green); }
 .refreshing { animation: pulse 1s ease infinite; }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
+/* ── Reconcile ── */
+.count-input { max-width: 90px; text-align: center; font-weight: 600; }
+.variance-surplus { color: var(--blue); font-weight: 700; }
+.variance-shortage { color: var(--red); font-weight: 700; }
+.variance-ok { color: var(--green); font-weight: 700; }
+.shop-toggle-mini { display: inline-flex; gap: 4px; }
+.sop-list { padding-left: 20px; line-height: 1.8; font-size: 13px; color: var(--charcoal-mid); }
+.sop-list li { margin-bottom: 6px; }
+.sop-list strong { color: var(--charcoal); }
+
 /* ── Mobile ── */
 @media (max-width: 1024px) {
   .dash-grid { grid-template-columns: 1fr; }

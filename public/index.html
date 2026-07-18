@@ -43,6 +43,9 @@
       <button class="nav-tab" id="nav-bridal" onclick="switchView('bridal')" role="tab">
         <i class="ri-scissors-line"></i> <span>Bridal Shop</span>
       </button>
+      <button class="nav-tab" id="nav-reconcile" onclick="switchView('reconcile')" role="tab">
+        <i class="ri-scales-3-line"></i> <span>Reconcile</span>
+      </button>
     </nav>
 
     <div class="header-actions">
@@ -180,6 +183,58 @@
           <div class="card-header"><span class="card-title"><div class="card-title-icon">📋</div> <span id="rental-board-title">Active Rentals</span></span></div>
           <div class="card-body" id="rental-board"></div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── RECONCILE / STOCK TAKE VIEW ── -->
+  <section id="view-reconcile" class="view">
+    <div class="view-header">
+      <h2 class="view-title"><i class="ri-scales-3-line"></i> Stock Take & Reconciliation</h2>
+      <p class="view-subtitle">Count physical stock, compare to system, and log corrective entries for any variance</p>
+    </div>
+
+    <div class="toolbar">
+      <div class="toolbar-actions">
+        <div class="shop-toggle-mini" role="group" aria-label="Shop selector">
+          <button class="sub-tab active" id="reconcile-tab-bags" onclick="setReconcileShop('Bags')"><i class="ri-handbag-line"></i> Bags</button>
+          <button class="sub-tab" id="reconcile-tab-bridal" onclick="setReconcileShop('Bridal')"><i class="ri-scissors-line"></i> Bridal</button>
+        </div>
+      </div>
+      <div class="toolbar-tools">
+        <button class="btn-secondary btn-sm" onclick="exportCountSheet()"><i class="ri-download-2-line"></i> Export count sheet</button>
+        <button class="btn-secondary btn-sm" onclick="document.getElementById('reconcile-import').click()"><i class="ri-upload-2-line"></i> Import counts</button>
+        <button class="btn-primary btn-sm" onclick="reconcileAll()"><i class="ri-check-double-line"></i> Reconcile all variances</button>
+        <input type="file" id="reconcile-import" accept=".csv" style="display:none;" onchange="importCounts(event)" />
+      </div>
+    </div>
+
+    <div class="stats-row" id="reconcile-stats"></div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title"><div class="card-title-icon">📊</div> <span id="reconcile-table-title">Stock Take — Bags Shop</span></span></div>
+      <div class="table-wrapper">
+        <table id="reconcile-table">
+          <thead><tr>
+            <th>SKU</th><th>Item</th><th>System Available</th><th>System Rented</th>
+            <th>Physical Count</th><th>Variance</th><th>Disposition</th><th class="th-actions">Action</th>
+          </tr></thead>
+          <tbody id="reconcile-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title"><div class="card-title-icon">📖</div> Reconciliation SOP</span></div>
+      <div class="card-body">
+        <ol class="sop-list">
+          <li><strong>Freeze movements</strong> for the SKUs being counted — suspend rentals/returns so the count is stable.</li>
+          <li><strong>Count physically</strong> per SKU (two independent counts recommended). Enter the number in the <em>Physical Count</em> column, or import via CSV.</li>
+          <li><strong>Review variances.</strong> Surplus (positive) usually means an unlogged return or unrecorded stock; shortage (negative) means loss, theft, or an unlogged sale.</li>
+          <li><strong>Audit before resolving.</strong> For surpluses on rented items, confirm with the customer whether the item was returned — if so, use <em>Process Return</em> in the Rentals tab instead, to fix the status as well as the count.</li>
+          <li><strong>Resolve.</strong> Each corrective entry is logged as a new transaction (Restock for surplus, Status Change for shortage) with zero cost and a note referencing this stock take — historical rows are never edited.</li>
+          <li><strong>Re-verify.</strong> After resolving, recount the corrected SKUs to confirm physical now equals system.</li>
+        </ol>
       </div>
     </div>
   </section>

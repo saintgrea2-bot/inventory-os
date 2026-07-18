@@ -8,6 +8,8 @@
 const state = {
   currentView: 'dashboard',
   bridalTab: 'sales',
+  reconcileShop: 'Bags',
+  reconcileCounts: {},
   liveData: [],
   historyData: [],
 };
@@ -95,7 +97,7 @@ function switchView(view) {
   state.currentView = view;
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + view).classList.add('active');
-  ['dashboard', 'bags', 'bridal'].forEach(v => {
+  ['dashboard', 'bags', 'bridal', 'reconcile'].forEach(v => {
     document.getElementById('nav-' + v).classList.toggle('active', v === view);
   });
   renderAll();
@@ -114,6 +116,7 @@ function renderAll() {
   renderDashboard();
   renderBagsView();
   renderBridalSales();
+  renderReconcile();
   if (state.bridalTab === 'rentals') renderRentalBoard();
 }
 
@@ -666,6 +669,163 @@ function getActionBadge(action) {
 function getColorHex(c) {
   const map = { black:'#1A1A1A', white:'#F5F5F5', red:'#DC2626', blue:'#2563EB', green:'#16A34A', yellow:'#CA8A04', pink:'#EC4899', purple:'#7C3AED', brown:'#92400E', tan:'#D97706', navy:'#1E3A5F', grey:'#6B7280', gray:'#6B7280', beige:'#D4B483', gold:'#F59E0B', silver:'#94A3B8', orange:'#FF7A00', cream:'#FEFCE8', nude:'#E8C9A0', camel:'#C19A6B' };
   return map[(c || '').toLowerCase().replace(/\s/g, '')] || '#999';
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// STOCK TAKE / RECONCILIATION
+// ══════════════════════════════════════════════════════════════════════════
+
+function setReconcileShop(shop) {
+  state.reconcileShop = shop;
+  state.reconcileCounts = {};
+  document.getElementById('reconcile-tab-bags').classList.toggle('active', shop === 'Bags');
+  document.getElementById('reconcile-tab-bridal').classList.toggle('active', shop === 'Bridal');
+  renderReconcile();
+}
+
+function rentedCount(r) {
+  // Bridal items: 1 if status Rented, else 0. Bags don't track rentals.
+  return r.bridal_status === 'Rented' ? 1 : 0;
+}
+
+function renderReconcile() {
+  const shop = state.reconcileShop;
+  const items = shopItems(shop);
+  document.getElementById('reconcile-table-title').textContent = `Stock Take — ${shop === 'Bags' ? 'Bags Shop' : 'Bridal Shop'}`;
+
+  let totalSurplus = 0, totalShortage = 0, totalMatched = 0, totalPending = 0;
+  const counts = state.reconcileCounts;
+
+  const body = document.getElementById('reconcile-table-body');
+  if (!items.length) {
+    body.innerHTML = `<tr><td colspan="8">${emptyState('📭', 'No items', 'Add items to this shop first')}</td></tr>`;
+    document.getElementById('reconcile-stats').innerHTML = '';
+    return;
+  }
+
+  body.innerHTML = items.map(r => {
+    const sysAvail = parseInt(r.live_stock || 0);
+    const sysRented = rentedCount(r);
+    const counted = counts[r.item_sku];
+    const hasCount = counted != null && counted !== '';
+    const variance = hasCount ? (parseInt(counted) - sysAvail) : null;
+    const varianceCell = variance == null
+      ? '<span class="muted">—</span>'
+      : `<span class="${variance > 0 ? 'variance-surplus' : variance < 0 ? 'variance-shortage' : 'variance-ok'}">${variance > 0 ? '+' : ''}${variance}</span>`;
+    const disposition = !hasCount ? '<span class="muted">Not counted</span>'
+      : variance === 0 ? '<span class="badge badge-available">Matched</span>'
+      : variance > 0 ? `<span class="badge badge-restock">Surplus — log Restock +${variance}</span>`
+      : `<span class="badge badge-sale">Shortage — log adjustment ${variance}</span>`;
+    const actionBtn = hasCount && variance !== 0
+      ? `<button class="btn-primary btn-sm" onclick="resolveVariance('${escHtml(r.item_sku)}')"><i class="ri-check-line"></i> Resolve</button>`
+      : '<span class="muted">—</span>';
+
+    if (hasCount) {
+      if (variance > 0) totalSurplus++; else if (variance < 0) totalShortage++; else totalMatched++;
+    } else { totalPending++; }
+
+    return `<tr>
+      <td class="sku">${escHtml(r.item_sku)}</td>
+      <td><strong>${escHtml(r.item_name)}</strong>${r.bridal_status ? ' ' + getBridalStatusBadge(r.bridal_status) : ''}</td>
+      <td class="money">${sysAvail}</td>
+      <td class="money">${sysRented}</td>
+      <td><input class="form-input count-input" type="number" min="0" value="${hasCount ? escHtml(counted) : ''}" onchange="setCount('${escHtml(r.item_sku)}', this.value)" placeholder="0"></td>
+      <td class="money">${varianceCell}</td>
+      <td>${disposition}</td>
+      <td class="row-actions">${actionBtn}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('reconcile-stats').innerHTML = `
+    ${statCard('Items', items.length, 'orange')}
+    ${statCard('Matched', totalMatched, 'green')}
+    ${statCard('Surplus', totalSurplus, 'blue')}
+    ${statCard('Shortage', totalShortage, 'red')}
+  `;
+}
+
+function setCount(sku, value) {
+  state.reconcileCounts[sku] = value;
+  renderReconcile();
+}
+
+async function resolveVariance(sku) {
+  const shop = state.reconcileShop;
+  const item = itemsBySku(sku, shop);
+  if (!item) return;
+  const sysAvail = parseInt(item.live_stock || 0);
+  const counted = parseInt(state.reconcileCounts[sku]);
+  if (isNaN(counted)) { showToast('Enter a valid count first.', 'error'); return; }
+  const variance = counted - sysAvail;
+  if (variance === 0) { showToast('No variance to resolve.', 'info'); return; }
+
+  const isSurplus = variance > 0;
+  const body = {
+    shop_type: shop,
+    item_sku: sku,
+    item_name: item.item_name,
+    brand_designer: item.brand_designer || null,
+    bag_color: item.bag_color || null,
+    bridal_size: item.bridal_size || null,
+    bridal_status: item.bridal_status || null,
+    action_type: isSurplus ? 'Restock' : 'Status Change',
+    stock_cost_price: 0,
+    sell_price: 0,
+    quantity_change: variance,
+    notes: `Stock take reconciliation ${new Date().toISOString().slice(0,10)}: ${isSurplus ? '+' : ''}${variance} units (physical ${counted} vs system ${sysAvail}). ${isSurplus ? 'Surplus — likely unlogged return or unrecorded stock.' : 'Shortage — possible loss/unlogged sale.'}`,
+  };
+
+  try {
+    const res = await fetch(`${API}/log`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.details?.join(', ') || data.error || 'Server error');
+    showToast(`Resolved ${sku}: ${isSurplus ? '+' : ''}${variance} logged`, 'success');
+    delete state.reconcileCounts[sku];
+    await refreshAll();
+  } catch (err) {
+    showToast(`Resolve failed: ${err.message}`, 'error');
+  }
+}
+
+async function reconcileAll() {
+  const shop = state.reconcileShop;
+  const items = shopItems(shop);
+  const pending = items.filter(r => {
+    const c = state.reconcileCounts[r.item_sku];
+    return c != null && c !== '' && (parseInt(c) - parseInt(r.live_stock || 0)) !== 0;
+  });
+  if (!pending.length) { showToast('No variances to reconcile. Enter physical counts first.', 'info'); return; }
+  if (!confirm(`Reconcile ${pending.length} SKU(s) with variances? Each will be logged as a corrective transaction.`)) return;
+  for (const r of pending) { await resolveVariance(r.item_sku); }
+}
+
+function exportCountSheet() {
+  const shop = state.reconcileShop;
+  const items = shopItems(shop);
+  if (!items.length) { showToast('No items to export.', 'error'); return; }
+  const rows = items.map(r => ({ item_sku: r.item_sku, item_name: r.item_name, system_available: r.live_stock, system_rented: rentedCount(r), physical_count: '' }));
+  const headers = Object.keys(rows[0]);
+  const csv = [headers.join(','), ...rows.map(r => headers.map(h => { const v = r[h] == null ? '' : String(r[h]); return /[",\n]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; }).join(','))].join('\n');
+  downloadBlob(csv, `count-sheet-${shop.toLowerCase()}-${new Date().toISOString().slice(0,10)}.csv`, 'text/csv;charset=utf-8;');
+  showToast(`Exported ${rows.length} rows — fill the physical_count column and re-import`, 'success');
+}
+
+async function importCounts(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+  try {
+    const text = await file.text();
+    const rows = parseCsvText(text);
+    let n = 0;
+    for (const row of rows) {
+      const sku = row.item_sku || row.sku;
+      const counted = row.physical_count != null ? row.physical_count : row.counted;
+      if (sku && counted != null && counted !== '') { state.reconcileCounts[sku.toUpperCase()] = counted; n++; }
+    }
+    showToast(`Imported ${n} counts`, 'success');
+    renderReconcile();
+  } catch (err) { showToast(`Import failed: ${err.message}`, 'error'); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
