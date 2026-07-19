@@ -2,44 +2,28 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
 
 // ─── Database Pool ──────────────────────────────────────────────────────────
 const pool = require('./db/pool');
 
-// ─── Auto-run Schema on First Boot ─────────────────────────────────────────
+// ─── Auto-verify Schema on First Boot ──────────────────────────────────────
 async function initSchema() {
   let client;
   try {
     client = await pool.connect();
-    // Check if table already exists
+    // Verify the normalized v2 schema is present (items is the anchor table).
     const exists = await client.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables
-        WHERE table_name = 'unified_inventory_history'
+        WHERE table_name = 'items'
       );
     `);
 
     if (!exists.rows[0].exists) {
-      console.log('⏳  Table not found — running schema setup…');
-      const schemaPath = path.join(__dirname, 'db', 'schema.sql');
-      const sql = fs.readFileSync(schemaPath, 'utf8');
-
-      const statements = sql
-        .split(';')
-        .map(s => s.trim())
-        .filter(s => s.length > 0 && !s.startsWith('--') && !s.startsWith('SELECT'));
-
-      for (const stmt of statements) {
-        if (stmt.trim()) await client.query(stmt);
-      }
-      console.log('✅  Schema created successfully.');
+      console.log('⏳  Normalized schema not found — run db/schema_normalized.sql + db/views.sql against the database.');
     } else {
-      console.log('✅  Database table verified — ready.');
+      console.log('✅  Normalized schema verified — ready.');
     }
-
-    // ── Lightweight migrations: add columns that may not exist on older DBs ──
-    await client.query(`ALTER TABLE unified_inventory_history ADD COLUMN IF NOT EXISTS item_image TEXT;`);
   } catch (err) {
     console.error('❌  Schema init failed:', err.message);
   } finally {

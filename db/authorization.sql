@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
     id         BIGSERIAL PRIMARY KEY,
     table_name TEXT   NOT NULL,
     row_pk     TEXT   NOT NULL,
-    action     CHAR(1) NOT NULL,           -- U / D
+    action     VARCHAR(10) NOT NULL,           -- UPDATE / DELETE / INSERT
     changed_by NAME   NOT NULL DEFAULT CURRENT_USER,
     changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     old_data   JSONB,
