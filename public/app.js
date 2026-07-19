@@ -323,7 +323,7 @@ function rentalCard(r, withReturnBtn) {
         <div class="rental-item-head">${imgThumb(r,44)}<span class="rental-name">${escHtml(r.item_name)}</span></div>
         ${getBridalStatusBadge(r.bridal_status, overdue)}
       </div>
-      <div class="rental-meta"><strong>${escHtml(r.item_sku)}</strong>${r.bridal_size ? ` · Size ${escHtml(r.bridal_size)}` : ''}${r.brand_designer ? ` · ${escHtml(r.brand_designer)}` : ''}</div>
+      <div class="rental-meta"><strong>${escHtml(r.item_sku)}</strong>${(r.rental_quantity && r.rental_quantity > 1) ? ` · ×${r.rental_quantity}` : ''}${r.bridal_size ? ` · Size ${escHtml(r.bridal_size)}` : ''}${r.brand_designer ? ` · ${escHtml(r.brand_designer)}` : ''}</div>
       ${r.customer_name_contact ? `<div class="rental-meta">👤 ${escHtml(r.customer_name_contact)}</div>` : ''}
       ${r.rental_due_date ? `<div class="rental-meta" style="${overdue ? 'color:var(--red);font-weight:600;' : ''}">📅 Due: ${fmtDate(r.rental_due_date)}${r.bridal_status === 'Rented' ? (overdue ? ` · ⚠️ ${Math.abs(days)}d overdue` : (days <= 3 ? ` · ${days}d left` : '')) : ''}</div>` : ''}
       ${showReturn ? `<button class="btn-secondary btn-sm" style="margin-top:8px;" onclick="processReturn('${escHtml(r.item_sku)}')"><i class="ri-arrow-go-back-line"></i> Process Return</button>` : ''}
@@ -586,6 +586,7 @@ async function submitAction(e) {
       body.item_sku = val('f_sku'); body.item_name = item?.item_name; body.brand_designer = item?.brand_designer || null;
       body.bridal_size = item?.bridal_size || null; body.bridal_status = 'Rented';
       body.stock_cost_price = 0; body.sell_price = val('f_sell') || 0;
+      body.quantity = parseInt(val('f_qty')) || 1;
       body.quantity_change = 0;
       body.customer_name_contact = val('f_customer') || null; body.rental_due_date = val('f_due') || null;
       body.notes = val('f_notes') || null;

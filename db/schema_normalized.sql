@@ -119,7 +119,8 @@ CREATE TABLE IF NOT EXISTS rentals (
     booked_at     TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
     due_date      DATE         NOT NULL,
     returned_at   TIMESTAMPTZ,                   -- NULL until returned
-    rental_price  DECIMAL(10,2) NOT NULL,        -- snapshot at booking
+    rental_price  DECIMAL(10,2) NOT NULL,        -- snapshot at booking (total for the booking)
+    quantity      INT          NOT NULL DEFAULT 1 CHECK (quantity > 0),
     status        VARCHAR(20)  NOT NULL DEFAULT 'Rented'
                     CHECK (status IN ('Rented', 'Returned', 'Cancelled')),
 

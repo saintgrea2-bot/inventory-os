@@ -21,7 +21,7 @@ const VALID_LIFECYCLE = ['Available', 'In Alteration', 'Dry Cleaning', 'Sold'];
 router.post('/log', asyncHandler(async (req, res) => {
   let {
     shop_type, item_sku, item_name, brand_designer, item_image,
-    stock_cost_price, sell_price, quantity_change, bag_color, min_stock_alert,
+    stock_cost_price, sell_price, quantity_change, quantity, bag_color, min_stock_alert,
     bridal_size, bridal_status, rental_due_date, customer_name_contact,
     action_type, notes,
   } = req.body;
@@ -86,12 +86,13 @@ router.post('/log', asyncHandler(async (req, res) => {
          RETURNING id;`, [contactName]);
       const customerId = cu.rows[0].id;
 
+      const rentalQty = parseInt(quantity) > 0 ? parseInt(quantity) : 1;
       const r = await client.query(`
-        INSERT INTO rentals (item_sku, customer_id, due_date, rental_price, status, notes)
-        VALUES ($1,$2,$3,$4,'Rented',$5)
-        RETURNING id, booked_at AS created_at;`,
-        [item_sku, customerId, rental_due_date, sell_price, notes]);
-      transaction = { id: r.rows[0].id, created_at: r.rows[0].created_at, item_sku, item_name, action_type, gross_profit: sell_price, profit_margin: 100.00 };
+        INSERT INTO rentals (item_sku, customer_id, due_date, rental_price, quantity, status, notes)
+        VALUES ($1,$2,$3,$4,$5,'Rented',$6)
+        RETURNING id, booked_at AS created_at, quantity;`,
+        [item_sku, customerId, rental_due_date, sell_price, rentalQty, notes]);
+      transaction = { id: r.rows[0].id, created_at: r.rows[0].created_at, item_sku, item_name, action_type, quantity: r.rows[0].quantity, gross_profit: sell_price, profit_margin: 100.00 };
     }
     else if (action_type === 'Rental Return') {
       const r = await client.query(`

@@ -45,14 +45,15 @@ SELECT
         + COALESCE(ra.rental_revenue, 0)      AS total_revenue,
     CASE WHEN i.sell_price = 0 THEN 0.00
          ELSE ROUND(((i.sell_price - i.stock_cost_price) / i.sell_price) * 100, 2)
-    END                                       AS profit_margin
+    END                                       AS profit_margin,
+    rr.rental_quantity                        AS rental_quantity
 FROM items i
 LEFT JOIN sm_agg               sa  ON sa.item_sku = i.item_sku
 LEFT JOIN rent_agg             ra  ON ra.item_sku = i.item_sku
 LEFT JOIN v_item_stock            st  ON st.item_sku = i.item_sku
 LEFT JOIN v_item_current_status   cs  ON cs.item_sku = i.item_sku
 LEFT JOIN LATERAL (
-    SELECT r.customer_id
+    SELECT r.customer_id, r.quantity AS rental_quantity
     FROM rentals r
     WHERE r.item_sku = i.item_sku AND r.status = 'Rented'
     ORDER BY r.booked_at DESC LIMIT 1
@@ -128,7 +129,7 @@ FROM (
         0.00 AS stock_cost_price, r.rental_price AS sell_price,
         r.rental_price AS gross_profit,
         100.00 AS profit_margin,
-        0 AS quantity_change, i.bag_color, i.min_stock_alert, i.bridal_size,
+        r.quantity AS quantity_change, i.bag_color, i.min_stock_alert, i.bridal_size,
         r.status AS bridal_status, r.due_date AS rental_due_date,
         cust.display_name AS customer_name_contact,
         CASE WHEN r.status = 'Rented' THEN 'Rental Out' ELSE 'Rental Return' END AS action_type,
