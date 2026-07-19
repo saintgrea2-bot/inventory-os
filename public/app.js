@@ -514,10 +514,10 @@ function buildActionForm(action, shop, presetSku) {
   }
 
   if (action === 'new_rental') {
-    // Available items from Bridal inventory only (rentals are Bridal-exclusive)
+    // Available items from bridal inventory only (rentals are Bridal-exclusive)
     const available = items.filter(r => !r.bridal_status || r.bridal_status === 'Available');
     return formWrap(`
-      ${field('Select Available Item *', select('f_sku', productOptions(available)), 'Choose an available Bridal item to rent out')}
+      ${field('Select Available Item *', select('f_sku', productOptions(available)), 'Choose an available item from inventory to rent out')}
       ${row(field('Customer Name & Contact *', input('f_customer', 'text', 'placeholder="Name — Phone / Email" required')), field('Return Due Date *', input('f_due', 'date', 'required')))}
       ${row(field('Rental Price', input('f_sell', 'number', 'placeholder="0.00" min="0" step="0.01"')), field('Quantity', input('f_qty', 'number', 'value="1"')))}
       ${field('Notes', `<textarea class="form-textarea" id="f_notes"></textarea>`)}
@@ -581,7 +581,7 @@ async function submitAction(e) {
       body.quantity_change = -Math.abs(parseInt(val('f_qty')) || 1); body.notes = val('f_notes') || null;
     } else if (action === 'new_rental') {
       actionType = 'Rental Out';
-      const item = itemsBySku(val('f_sku'), 'Bridal');
+      const item = state.liveData.find(r => r.item_sku === val('f_sku'));
       body.item_sku = val('f_sku'); body.item_name = item?.item_name; body.brand_designer = item?.brand_designer || null;
       body.bridal_size = item?.bridal_size || null; body.bridal_status = 'Rented';
       body.stock_cost_price = 0; body.sell_price = val('f_sell') || 0;
