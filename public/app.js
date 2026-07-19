@@ -514,10 +514,11 @@ function buildActionForm(action, shop, presetSku) {
   }
 
   if (action === 'new_rental') {
-    // Available items from bridal inventory only (rentals are Bridal-exclusive)
-    const available = items.filter(r => !r.bridal_status || r.bridal_status === 'Available');
+    // Available items from bridal inventory only (rentals are Bridal-exclusive).
+    // 'Returned' items are back in stock and rentable again.
+    const available = items.filter(r => !r.bridal_status || r.bridal_status === 'Available' || r.bridal_status === 'Returned');
     return formWrap(`
-      ${field('Select Available Item *', select('f_sku', productOptions(available)), 'Choose an available item from inventory to rent out')}
+      ${field('Select Available Item *', select('f_sku', productOptions(available)), 'Choose an available bridal item to rent out')}
       ${row(field('Customer Name & Contact *', input('f_customer', 'text', 'placeholder="Name — Phone / Email" required')), field('Return Due Date *', input('f_due', 'date', 'required')))}
       ${row(field('Rental Price', input('f_sell', 'number', 'placeholder="0.00" min="0" step="0.01"')), field('Quantity', input('f_qty', 'number', 'value="1"')))}
       ${field('Notes', `<textarea class="form-textarea" id="f_notes"></textarea>`)}
