@@ -1,9 +1,17 @@
 -- =============================================================
 -- Data Migration: v1 (unified_inventory_history) -> v2 (normalized)
--- Read-only against the legacy table; idempotent (ON CONFLICT).
--- Run AFTER schema_normalized.sql, BEFORE cutover.
+-- Read-only against the legacy table; re-runnable (rows tagged
+-- created_by='migration' are deleted first). Run AFTER
+-- schema_normalized.sql, BEFORE cutover.
 --   psql "$DATABASE_URL" -f db/migrate_v1_to_v2.sql
 -- =============================================================
+
+-- ---------- 0. Clean up any prior partial migration run ----------
+DELETE FROM rentals                WHERE created_by  = 'migration';
+DELETE FROM customers              WHERE created_by  = 'migration';
+DELETE FROM stock_movements        WHERE created_by  = 'migration';
+DELETE FROM item_lifecycle_events  WHERE recorded_by = 'migration';
+-- items is idempotent via ON CONFLICT (item_sku) DO UPDATE; left alone.
 
 -- ---------- 1. Backfill items master (latest value per SKU) ----------
 INSERT INTO items (item_sku, shop_code, item_name, brand_designer, item_image,
@@ -71,32 +79,49 @@ FROM unified_inventory_history h
 WHERE h.action_type = 'Status Change'
   AND h.bridal_status IS NOT NULL;
 
--- ---------- 5. Rentals: 'Rental Out' creates a booking ----------
-INSERT INTO rentals (item_sku, customer_id, booked_at, due_date, rental_price, status, notes, created_at, created_by)
-SELECT h.item_sku,
+-- ---------- 5. Rentals: one row per SKU = its most recent booking ----------
+-- The legacy log may contain repeated Rental Out/Return pairs per SKU.
+-- We reconstruct the *latest* booking per SKU (matching the legacy app's
+-- "latest row per SKU" semantics) so the uq_rentals_one_active_per_sku
+-- constraint holds. Full multi-booking history is not recoverable from
+-- the log without event correlation.
+WITH latest_out AS (
+    SELECT DISTINCT ON (h.item_sku)
+           h.item_sku,
+           h.created_at AS booked_at,
+           COALESCE(h.rental_due_date, (h.created_at::date + INTERVAL '7 days')::date) AS due_date,
+           h.sell_price,
+           h.notes,
+           h.customer_name_contact
+    FROM unified_inventory_history h
+    WHERE h.action_type = 'Rental Out'
+    ORDER BY h.item_sku, h.created_at DESC
+),
+later_return AS (
+    SELECT lo.item_sku, MIN(r.created_at) AS returned_at
+    FROM latest_out lo
+    JOIN unified_inventory_history r
+      ON r.item_sku    = lo.item_sku
+     AND r.action_type = 'Rental Return'
+     AND r.created_at  > lo.booked_at
+    GROUP BY lo.item_sku
+)
+INSERT INTO rentals (item_sku, customer_id, booked_at, due_date, rental_price,
+                     status, returned_at, notes, created_at, created_by)
+SELECT lo.item_sku,
        c.id,
-       h.created_at,
-       COALESCE(h.rental_due_date, (h.created_at::date + INTERVAL '7 days')::date),
-       h.sell_price,
-       'Rented',
-       h.notes,
-       h.created_at,
+       lo.booked_at,
+       lo.due_date,
+       lo.sell_price,
+       CASE WHEN lr.returned_at IS NOT NULL THEN 'Returned' ELSE 'Rented' END,
+       lr.returned_at,
+       lo.notes,
+       lo.booked_at,
        'migration'
-FROM unified_inventory_history h
-LEFT JOIN _cust_map m ON m.contact = COALESCE(h.customer_name_contact, 'Walk-in')
-LEFT JOIN customers  c ON c.display_name = m.contact
-WHERE h.action_type = 'Rental Out';
-
--- ---------- 6. Rentals: 'Rental Return' closes the most recent open rental ----------
-UPDATE rentals r
-SET returned_at = h.created_at,
-    status     = 'Returned'
-FROM ( SELECT DISTINCT ON (h.item_sku) h.item_sku, h.created_at
-       FROM unified_inventory_history h
-       WHERE h.action_type = 'Rental Return'
-       ORDER BY h.item_sku, h.created_at DESC ) h
-WHERE r.item_sku = h.item_sku
-  AND r.status   = 'Rented';
+FROM latest_out lo
+LEFT JOIN later_return lr ON lr.item_sku = lo.item_sku
+LEFT JOIN _cust_map   m   ON m.contact   = COALESCE(lo.customer_name_contact, 'Walk-in')
+LEFT JOIN customers   c   ON c.display_name = m.contact;
 
 -- ---------- 7. Verification counts ----------
 SELECT 'items'           AS table_name, COUNT(*) FROM items

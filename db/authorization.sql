@@ -17,14 +17,16 @@
 -- in via psql variables so they never appear in the repo:
 --   psql "$DATABASE_URL" -v ro_pw=... -v inv_pw=... -v rent_pw=... -v adm_pw=... -f db/authorization.sql
 -- On existing DBs prefer ALTER ROLE ... PASSWORD rather than recreating.
-CREATE ROLE app_readonly  LOGIN PASSWORD :ro_pw;
-CREATE ROLE inventory_mgr LOGIN PASSWORD :inv_pw;
-CREATE ROLE rental_clerk  LOGIN PASSWORD :rent_pw;
-CREATE ROLE app_admin     LOGIN PASSWORD :adm_pw;
-
--- Group roles for easier grant management.
-CREATE ROLE r_read  NOLOGIN;
-CREATE ROLE r_write NOLOGIN;
+-- Idempotent: create if absent, else rotate the password.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='app_readonly')  THEN CREATE ROLE app_readonly  LOGIN PASSWORD :ro_pw;   ELSE ALTER ROLE app_readonly  LOGIN PASSWORD :ro_pw;   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='inventory_mgr') THEN CREATE ROLE inventory_mgr LOGIN PASSWORD :inv_pw;   ELSE ALTER ROLE inventory_mgr LOGIN PASSWORD :inv_pw;   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='rental_clerk')  THEN CREATE ROLE rental_clerk  LOGIN PASSWORD :rent_pw;  ELSE ALTER ROLE rental_clerk  LOGIN PASSWORD :rent_pw;  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='app_admin')     THEN CREATE ROLE app_admin     LOGIN PASSWORD :adm_pw;    ELSE ALTER ROLE app_admin     LOGIN PASSWORD :adm_pw;    END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='r_read')        THEN CREATE ROLE r_read  NOLOGIN; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='r_write')       THEN CREATE ROLE r_write NOLOGIN; END IF;
+END $$;
 
 GRANT r_read TO app_readonly, inventory_mgr, rental_clerk, app_admin;
 GRANT r_write TO inventory_mgr, rental_clerk, app_admin;
@@ -60,7 +62,13 @@ ALTER TABLE rentals              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers            ENABLE ROW LEVEL SECURITY;
 
 -- App_admin bypasses RLS (full access for migrations/support).
-GRANT BYPASSRLS TO app_admin;
+-- Best-effort: some Neon plans restrict BYPASSRLS for non-superusers.
+DO $$
+BEGIN
+  ALTER ROLE app_admin BYPASSRLS;
+EXCEPTION WHEN insufficient_privilege OR object_not_in_prerequisite_state THEN
+  RAISE NOTICE 'BYPASSRLS not permitted on this Neon plan; app_admin will rely on explicit grants only';
+END $$;
 
 -- Session variable `app.shop_code` is set on connect (SET LOCAL app.shop_code = 'Bridal')
 -- to scope a clerk's session to their shop.
